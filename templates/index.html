@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PATRICK ARCHITECT — BIM Studio v5.0 Enterprise</title>
+    <!-- Three.js, OrbitControls, and PointerLockControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    
+    <style>
+        :root {
+            --bg-canvas: #fbfbf9;
+            --primary-black: #111827;
+            --text-dark: #111827;
+            --text-muted: #6b7280;
+            --gold-accent: #b48324;
+            --border-light: #e5e7eb;
+            --primary-blue: #0284c7;
+            --accent-green: #10b981;
+            --sidebar-width: 420px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-canvas);
+            color: var(--text-dark);
+        }
+
+        /* Screen Routing Architecture */
+        .screen {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            overflow-y: auto;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+        }
+
+        /* Top Enterprise Navbar */
+        .header-nav {
+            width: 100%;
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 42px;
+            background: transparent;
+            position: relative;
+            z-index: 100;
+        }
+        .brand-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+        }
+        .brand-logo-box {
+            width: 34px;
+            height: 34px;
+            background: var(--primary-black);
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 18px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .brand-text h1 {
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--text-dark);
+        }
+        .brand-text p {
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.2px;
+        }
+
+        /* Nav Pills Container */
+        .nav-pills {
+            display: flex;
+            align-items: center;
+            background: #ffffff;
+            border: 1px solid var(--border-light);
+            border-radius: 30px;
+            padding: 4px 6px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+            gap: 2px;
+            z-index: 110;
+        }
+        .nav-pill-btn {
+            background: transparent;
+            border: none;
+            padding: 7px 18px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .nav-pill-btn:hover {
+            color: var(--text-dark);
+        }
+        .nav-pill-btn.active {
+            background: #f3f4f6;
+            color: var(--text-dark);
+            font-weight: 700;
+        }
+
+        /* Status Indicator */
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-green);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+        }
+
+        /* SCREEN 1: Hero Section */
+        #screen-landing {
+            background-color: var(--bg-canvas);
+            background-image: radial-gradient(#d1d5db 0.8px, transparent 0.8px);
+            background-size: 24px 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .hero-center {
+            max-width: 860px;
+            margin: 60px auto 0 auto;
+            text-align: center;
+            padding: 0 20px;
+            position: relative;
+            z-index: 60;
+        }
+        .gold-subtitle {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1.8px;
+            color: var(--gold-accent);
+            text-transform: uppercase;
+            margin-bottom: 22px;
+        }
+        .hero-headline {
+            font-size: 52px;
+            font-weight: 900;
+            letter-spacing: -1px;
+            line-height: 1.12;
+            color: #111827;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+        }
+        .hero-description {
+            font-size: 15px;
+            line-height: 1.65;
+            color: #4b5563;
+            max-width: 740px;
+            margin: 0 auto 36px auto;
+        }
+        .hero-action-group {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+        .btn-pill-dark {
+            background: var(--primary-black);
+            color: #ffffff;
+            padding: 13px 30px;
+            border-radius: 28px;
+            font-size: 14px;
+            font-weight: 600;
+            border: 1px solid var(--primary-black);
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+            transition: all 0.2s ease;
+        }
+        .btn-pill-dark:hover {
+            background: #1f2937;
+            transform: translateY(-1px);
+        }
+        .btn-pill-light {
+            background: #ffffff;
+            color: #111827;
+            padding: 13px 26px;
+            border-radius: 28px;
+            font-size: 14px;
+            font-weight: 600;
+            border: 1px solid var(--border-light);
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            transition: all 0.2s ease;
+        }
+        .btn-pill-light:hover {
+            background: #f9fafb;
+            border-color: #d1d5db;
+        }
+
+        /* Bottom Technical Metrics Grid */
+        .bottom-features-grid {
+            max-width: 980px;
+            width: 100%;
+            margin: 0 auto 50px auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            padding: 0 20px;
+        }
+        .feature-item-col {
+            text-align: left;
+            border-left: 2px solid #e5e7eb;
+            padding-left: 14px;
+        }
+        .feature-item-col h4 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 3px;
+        }
+        .feature-item-col p {
+            font-size: 11px;
+            color: #6b7280;
+        }
+
+        /* SCREEN 2: Blueprint Ingestion Screen */
+        #screen-upload {
+            background-color: var(--bg-canvas);
+            align-items: center;
+        }
+        .upload-content-box {
+            width: 100%;
+            max-width: 820px;
+            text-align: center;
+            margin: 40px auto;
+            padding: 0 20px;
+            position: relative;
+            z-index: 60;
+        }
+        .drop-zone {
+            border: 2px dashed #9ca3af;
+            border-radius: 18px;
+            padding: 60px 20px;
+            background: #ffffff;
+            cursor: pointer;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.2s;
+        }
+        .drop-zone.drag-over {
+            border-color: var(--primary-blue);
+            background: #f0f9ff;
+        }
+        .file-review-card {
+            display: none;
+            margin-top: 24px;
+            background: #ffffff;
+            padding: 22px;
+            border-radius: 18px;
+            border: 1px solid var(--border-light);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.04);
+        }
+        .preview-img-wrapper img {
+            width: 100%;
+            max-height: 480px;
+            object-fit: contain;
+            border-radius: 10px;
+        }
+
+        /* SCREEN 3: Verification & Pre-Studio Dashboard */
+        #screen-analysis {
+            background-color: var(--bg-canvas);
+            align-items: center;
+        }
+        .analysis-card {
+            width: 100%;
+            max-width: 860px;
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 30px;
+            border: 1px solid var(--border-light);
+            margin: 30px auto;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.04);
+            position: relative;
+            z-index: 60;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin: 22px 0;
+        }
+        .stat-box {
+            background: #f9fafb;
+            border: 1px solid var(--border-light);
+            padding: 16px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-box .val {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--primary-blue);
+        }
+        .stat-box .lbl {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* SCREEN 4: 3D BIM Studio (Full Viewport Split) */
+        #screen-studio {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #screen-studio.active {
+            display: flex !important;
+            flex-direction: row !important;
+        }
+        
+        .studio-stage {
+            flex: 1 1 auto;
+            min-width: 0;
+            height: 100%;
+            position: relative;
+            background: #f1f5f9;
+            overflow: hidden;
+        }
+        #three-stage {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Studio Left Dock */
+        .dock-left {
+            position: absolute;
+            left: 18px;
+            top: 18px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+            z-index: 40;
+        }
+        .dock-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .dock-btn:hover {
+            background: #f3f4f6;
+        }
+        .dock-btn.active {
+            background: #e0f2fe;
+            border-color: var(--primary-blue);
+            color: var(--primary-blue);
+        }
+
+        /* Right Inspector Sidebar */
+        .studio-sidebar {
+            width: var(--sidebar-width) !important;
+            min-width: var(--sidebar-width) !important;
+            height: 100% !important;
+            background: #ffffff !important;
+            border-left: 1px solid var(--border-light) !important;
+            display: flex !important;
+            flex-direction: column !important;
+            position: relative !important;
+            z-index: 50 !important;
+            flex-shrink: 0 !important;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.05);
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-light);
+            background: #f9fafb;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 13px 4px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .tab-btn:hover {
+            color: var(--primary-blue);
+        }
+        .tab-btn.active {
+            background: #ffffff;
+            border-bottom-color: var(--primary-blue);
+            color: var(--primary-blue);
+        }
+
+        .sidebar-content {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 18px;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        .furniture-card-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 9px 12px;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            background: #f9fafb;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .furniture-card-item:hover {
+            border-color: var(--primary-blue);
+            background: #f0f9ff;
+        }
+        .furniture-card-item.selected {
+            border-color: var(--primary-blue);
+            background: #e0f2fe;
+        }
+
+        .color-preset-circle {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid #e5e7eb;
+            cursor: pointer;
+        }
+        .color-preset-circle:hover {
+            transform: scale(1.12);
+            border-color: var(--primary-blue);
+        }
+
+        /* Banners & Modal */
+        #cad-readout-banner, #walk-instruction-banner, #placing-banner, #emergency-banner {
+            display: none;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 30;
+            pointer-events: none;
+        }
+        #cad-readout-banner { top: 18px; background: rgba(17, 24, 39, 0.92); color: #fff; }
+        #walk-instruction-banner { bottom: 25px; background: rgba(17, 24, 39, 0.88); color: #fff; }
+        #emergency-banner { top: 18px; background: #ef4444; color: #fff; }
+        #placing-banner { top: 18px; background: var(--primary-blue); color: #fff; }
+        #walk-crosshair {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            border: 2px solid #ef4444;
+            border-radius: 50%;
+            z-index: 30;
+        }
+
+        #inspector-overlay {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            left: 80px;
+            width: 310px;
+            background: rgba(17, 24, 39, 0.94);
+            backdrop-filter: blur(8px);
+            color: #fff;
+            padding: 14px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            z-index: 30;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .modal-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            width: 330px;
+            text-align: center;
+        }
+        .qr-img {
+            width: 180px;
+            height: 180px;
+            margin: 12px auto;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SCREEN 1: Overview Landing Page -->
+    <div id="screen-landing" class="screen active">
+        <header class="header-nav">
+            <div class="brand-container" onclick="goToScreen('screen-landing')">
+                <div class="brand-logo-box">P</div>
+                <div class="brand-text">
+                    <h1>Patrick Architect</h1>
+                    <p>BIM Studio v5.0 Enterprise · Autonomous AI</p>
+                </div>
+            </div>
+
+            <nav class="nav-pills">
+                <button class="nav-pill-btn active" onclick="goToScreen('screen-landing')">01 Overview</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-upload')">02 Ingestion</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-analysis')">03 AI & Uncertainty</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-studio')">04 3D Studio</button>
+            </nav>
+
+            <div class="system-status">
+                <span class="status-dot"></span>
+                <span>Spatial Intelligence Active</span>
+            </div>
+        </header>
+
+        <main class="hero-center">
+            <div class="gold-subtitle">ENTERPRISE BIM · EXPLAINABLE AI · DIGITAL TWIN</div>
+            <h2 class="hero-headline">AUTONOMOUS 2D TO 3D<br>ARCHITECTURAL TWIN</h2>
+            <p class="hero-description">
+                Transform 2D blueprints into an explainable, self-verifying BIM digital twin. Features uncertainty-aware ambiguity resolution, diurnal solar raytracing, structural IS 456 feasibility auditing, building knowledge graphs, cross-device QR inspection, and automated BOQ in Indian Rupees.
+            </p>
+            <div class="hero-action-group">
+                <button id="btn-start-project" class="btn-pill-dark" onclick="goToScreen('screen-upload')">Start Architectural Project &nbsp;→</button>
+                <button id="btn-launch-default" class="btn-pill-light">Launch Interactive Studio</button>
+            </div>
+        </main>
+
+        <footer class="bottom-features-grid">
+            <div class="feature-item-col">
+                <h4>Self-Correcting AI</h4>
+                <p>Human-in-the-Loop</p>
+            </div>
+            <div class="feature-item-col">
+                <h4>Knowledge Graph</h4>
+                <p>Semantic Spatial Queries</p>
+            </div>
+            <div class="feature-item-col">
+                <h4>Digital Twin Physics</h4>
+                <p>Sun & Vent Simulation</p>
+            </div>
+            <div class="feature-item-col">
+                <h4>IS 456 Structural</h4>
+                <p>Automated Load Audit</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- SCREEN 2: Blueprint Ingestion Screen -->
+    <div id="screen-upload" class="screen">
+        <header class="header-nav">
+            <div class="brand-container" onclick="goToScreen('screen-landing')">
+                <div class="brand-logo-box">P</div>
+                <div class="brand-text">
+                    <h1>Patrick Architect</h1>
+                    <p>BIM Studio v5.0 Enterprise · Autonomous AI</p>
+                </div>
+            </div>
+
+            <nav class="nav-pills">
+                <button class="nav-pill-btn" onclick="goToScreen('screen-landing')">01 Overview</button>
+                <button class="nav-pill-btn active" onclick="goToScreen('screen-upload')">02 Ingestion</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-analysis')">03 AI & Uncertainty</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-studio')">04 3D Studio</button>
+            </nav>
+
+            <div class="system-status">
+                <span class="status-dot"></span>
+                <span>Spatial Intelligence Active</span>
+            </div>
+        </header>
+
+        <div class="upload-content-box">
+            <h2 style="font-size: 26px; font-weight: 800; margin-top: 10px;">Architectural Blueprint Ingestion</h2>
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Drop a 2D floor plan drawing to synthesize spatial and volumetric bounds.</p>
+
+            <input type="file" id="file-input" accept="image/png, image/jpeg, image/jpg" style="display: none;" />
+            
+            <div id="drop-zone" class="drop-zone">
+                <div style="font-size: 40px;">📁</div>
+                <div style="font-weight: 700; font-size: 15px;">Drag & Drop floor plan drawing here</div>
+                <div style="color: var(--text-muted); font-size: 12px;">Supports PNG or JPG blueprints</div>
+                <button type="button" id="btn-select-file" class="btn-pill-dark" style="margin-top: 10px; padding: 10px 22px; font-size: 13px;">Browse Local Files</button>
+            </div>
+
+            <div id="file-review-card" class="file-review-card">
+                <div class="preview-img-wrapper">
+                    <img id="blueprint-review-img" src="" alt="Blueprint Preview" />
+                </div>
+                <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="text-align: left;">
+                        <div id="review-file-name" style="font-weight: 700; font-size: 13px;">blueprint.png</div>
+                        <div id="review-file-size" style="font-size: 11px; color: var(--text-muted);">1.2 MB</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" id="btn-reset-upload" class="btn-pill-light" style="padding: 9px 18px; font-size: 12px;">Remove</button>
+                        <button type="button" id="btn-start-analysis" class="btn-pill-dark" style="padding: 9px 22px; font-size: 12px;">Synthesize 3D Twin</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 3: Verification & Pre-Studio Dashboard -->
+    <div id="screen-analysis" class="screen">
+        <header class="header-nav">
+            <div class="brand-container" onclick="goToScreen('screen-landing')">
+                <div class="brand-logo-box">P</div>
+                <div class="brand-text">
+                    <h1>Patrick Architect</h1>
+                    <p>BIM Studio v5.0 Enterprise · Autonomous AI</p>
+                </div>
+            </div>
+
+            <nav class="nav-pills">
+                <button class="nav-pill-btn" onclick="goToScreen('screen-landing')">01 Overview</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-upload')">02 Ingestion</button>
+                <button class="nav-pill-btn active" onclick="goToScreen('screen-analysis')">03 AI & Uncertainty</button>
+                <button class="nav-pill-btn" onclick="goToScreen('screen-studio')">04 3D Studio</button>
+            </nav>
+
+            <div class="system-status">
+                <span class="status-dot"></span>
+                <span>Spatial Intelligence Active</span>
+            </div>
+        </header>
+
+        <div class="analysis-card">
+            <h3 style="font-size: 20px; font-weight: 800;">Spatial Model Synthesis Complete</h3>
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Vectorized clean walls, architectural doors, and windows ready for 3D exploration.</p>
+
+            <div class="stat-grid">
+                <div class="stat-box"><div id="anal-spaces" class="val">--</div><div class="lbl">Detected Spaces</div></div>
+                <div class="stat-box"><div id="anal-walls" class="val">--</div><div class="lbl">Extruded Walls</div></div>
+                <div class="stat-box"><div id="anal-integrity" class="val">--</div><div class="lbl">IS 456 Structural</div></div>
+                <div class="stat-box"><div id="anal-cost" class="val" style="color: var(--accent-green);">--</div><div class="lbl">Estimated BOQ (₹)</div></div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+                <button class="btn-pill-light" onclick="goToScreen('screen-upload')" style="padding: 10px 20px; font-size: 13px;">Re-upload</button>
+                <button id="btn-enter-studio" class="btn-pill-dark" style="padding: 10px 24px; font-size: 13px;">Enter 3D Studio →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 4: 3D BIM Studio (Main Digital Twin) -->
+    <div id="screen-studio" class="screen">
+        <div class="studio-stage">
+            <!-- Left Dock -->
+            <div class="dock-left">
+                <button id="dock-home" class="dock-btn" title="Home" onclick="goToScreen('screen-landing')">🏠</button>
+                <button id="dock-upload" class="dock-btn" title="Upload New" onclick="goToScreen('screen-upload')">📁</button>
+                <button id="tool-fire" class="dock-btn" title="Fire Emergency Egress Path">🔥</button>
+                <button id="tool-dimensions" class="dock-btn" title="Automatic CAD Dimensions">📐</button>
+                <button id="tool-avatar" class="dock-btn" title="Human Ergonomic Avatar">🧍</button>
+                <button id="tool-cad" class="dock-btn" title="Point-to-Point Tape Measure">📏</button>
+                <button id="tool-overlay" class="dock-btn" title="2D Blueprint Floor Overlay">🗺️</button>
+                <button id="tool-walk" class="dock-btn" title="WASD Walkthrough">🚶‍♂️</button>
+                <button id="tool-reset" class="dock-btn" title="Reset Camera">🎯</button>
+                <button id="tool-qr" class="dock-btn" title="Mobile QR Inspection">📱</button>
+            </div>
+
+            <!-- Overlays -->
+            <div id="cad-readout-banner">CAD Tape Measure: Click Point A</div>
+            <div id="emergency-banner">🔥 EMERGENCY EVACUATION: NBC 2016 STATUTORY EXIT PATH</div>
+            <div id="placing-banner">🛠️ Click anywhere on the floor to place your furniture!</div>
+            <div id="walk-instruction-banner">WASD to Walk | Mouse to Look | ESC to Exit</div>
+            <div id="walk-crosshair"></div>
+
+            <div id="inspector-overlay">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #374151; padding-bottom:5px; margin-bottom:6px;">
+                    <strong id="insp-elem-title">ELEMENT INSPECTION</strong>
+                    <button onclick="document.getElementById('inspector-overlay').style.display='none'" style="background:none; border:none; color:#9ca3af; cursor:pointer;">✕</button>
+                </div>
+                <div id="insp-elem-body" style="line-height:1.6;">Click any wall or room in 3D to inspect real engineering properties.</div>
+            </div>
+
+            <div id="three-stage"></div>
+        </div>
+
+        <!-- Right Inspector Sidebar -->
+        <div class="studio-sidebar">
+            <div class="sidebar-tabs">
+                <button class="tab-btn active" data-tab="tab-furn">🛋️ Furnish</button>
+                <button class="tab-btn" data-tab="tab-walls">🎨 Finishes</button>
+                <button class="tab-btn" data-tab="tab-sun">🌅 Climate</button>
+                <button class="tab-btn" data-tab="tab-doctor">🩺 Doctor</button>
+                <button class="tab-btn" data-tab="tab-copilot">🤖 Copilot</button>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- TAB 1: Smart Furniture Layout -->
+                <div id="tab-furn" class="tab-content active">
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">Smart Furniture Layout</h4>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">Auto-stage rooms or pick items below to place manually:</p>
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+                        <button id="btn-auto-stage" class="btn-pill-dark" style="flex: 1; font-size: 11px; padding: 8px; border-radius: 8px;">⚡ AI Auto-Stage All</button>
+                        <button id="btn-clear-furniture" class="btn-pill-light" style="flex: 1; font-size: 11px; padding: 8px; border-radius: 8px;">Clear All</button>
+                    </div>
+
+                    <strong style="font-size: 12px;">Furniture Catalog:</strong>
+                    <div id="catalog-list" style="margin-top: 8px;">
+                        <div class="furniture-card-item" data-type="bed">
+                            <span>🛏️ Double Bed + Side Tables</span> <strong style="font-size: 11px; color: var(--primary-blue);">Place</strong>
+                        </div>
+                        <div class="furniture-card-item" data-type="sofa">
+                            <span>🛋️ Living 3-Seater Sofa Set</span> <strong style="font-size: 11px; color: var(--primary-blue);">Place</strong>
+                        </div>
+                        <div class="furniture-card-item" data-type="dining">
+                            <span>🍽️ Dining Table & Chairs</span> <strong style="font-size: 11px; color: var(--primary-blue);">Place</strong>
+                        </div>
+                        <div class="furniture-card-item" data-type="wardrobe">
+                            <span>🚪 Full-Height Wardrobe / Almirah</span> <strong style="font-size: 11px; color: var(--primary-blue);">Place</strong>
+                        </div>
+                        <div class="furniture-card-item" data-type="fridge">
+                            <span>🧊 Double-Door Refrigerator</span> <strong style="font-size: 11px; color: var(--primary-blue);">Place</strong>
+                        </div>
+                        <div class="furniture-card-item" data-type="kitchen">
+                            <span>🍳 Kitchen L-Counter Slab</span> <strong style="font-size: 11px; color: var(--primary-blue);">Place</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: Wall Finishes & Colors -->
+                <div id="tab-walls" class="tab-content">
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">PBR Wall Finishes</h4>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Choose custom wall paint color or material texture:</p>
+                    
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                        <input type="color" id="wall-color-picker" value="#ded8ce" style="width: 44px; height: 44px; border: none; border-radius: 8px; cursor: pointer;" />
+                        <div>
+                            <strong style="font-size: 13px;">Custom Paint Hex</strong>
+                            <div id="wall-color-hex" style="font-size: 11px; color: var(--text-muted);">#DED8CE</div>
+                        </div>
+                    </div>
+
+                    <strong style="font-size: 12px;">Quick Presets:</strong>
+                    <div style="display: flex; gap: 10px; margin-top: 8px; margin-bottom: 18px;">
+                        <div class="color-preset-circle" data-color="#ded8ce" style="background:#ded8ce;" title="Warm White Plaster"></div>
+                        <div class="color-preset-circle" data-color="#b94a32" style="background:#b94a32;" title="Terracotta Brick"></div>
+                        <div class="color-preset-circle" data-color="#78716c" style="background:#78716c;" title="Raw Concrete"></div>
+                        <div class="color-preset-circle" data-color="#334155" style="background:#334155;" title="Slate Navy"></div>
+                        <div class="color-preset-circle" data-color="#e2e8f0" style="background:#e2e8f0;" title="Modern Off-White"></div>
+                    </div>
+
+                    <h4 style="font-size: 13px; font-weight: 700; margin-top: 18px; margin-bottom: 8px;">Horizontal Section Slicer</h4>
+                    <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                        <span>Cut Height:</span> <strong id="val-section-height">4.00m</strong>
+                    </div>
+                    <input type="range" id="param-section-slider" min="0.4" max="4.0" step="0.1" value="4.0" style="width: 100%; margin-top: 6px;" />
+                </div>
+
+                <!-- TAB 3: Climate (Sunset & Daylight & Ventilation) -->
+                <div id="tab-sun" class="tab-content">
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">Diurnal Sun & Sunset Simulation</h4>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+                        <span>Solar Orbital Time:</span>
+                        <strong id="val-sun-hour" style="color: #ea580c; font-size: 14px;">12:00</strong>
+                    </div>
+                    <input type="range" id="param-sun-hour" min="6" max="18" step="0.25" value="12" style="width: 100%; margin-bottom: 12px;" />
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 18px;">
+                        <button id="btn-sun-noon" class="btn-pill-light" style="flex: 1; padding: 7px; font-size: 11px; border-radius: 6px;">☀️ Noon (12:00)</button>
+                        <button id="btn-sun-sunset" class="btn-pill-dark" style="flex: 1; padding: 7px; font-size: 11px; background: #ea580c; border-color: #ea580c; border-radius: 6px;">🌅 Sunset (18:00)</button>
+                    </div>
+
+                    <div id="sunset-info-card" style="display: none; padding: 12px; background: #fff7ed; border: 1px solid #ffedd5; border-radius: 8px; font-size: 11px; color: #9a3412; line-height: 1.5; margin-bottom: 16px;">
+                        <strong>Sunset State Active (18:00):</strong> Low solar altitude (6°), warm amber lighting, casting long shadows across western window openings.
+                    </div>
+
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 8px;">Passive Aerodynamic Ventilation</h4>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                        <input type="checkbox" id="toggle-vent-flow" /> Visualize Passive Cross-Breeze Vectors
+                    </label>
+                </div>
+
+                <!-- TAB 4: Design Doctor & Costing -->
+                <div id="tab-doctor" class="tab-content">
+                    <div style="background:#f9fafb; border:1px solid var(--border-light); padding:12px; border-radius:10px; margin-bottom:12px;">
+                        <div style="font-size:11px; color:var(--text-muted);">BUILDING HEALTH INDEX</div>
+                        <div id="doctor-overall-score" style="font-size:24px; font-weight:800; color:var(--accent-green); margin-top:2px;">88 / 100</div>
+                    </div>
+
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">CPWD Rate Takeoffs</h4>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                        <tbody id="boq-table-body"></tbody>
+                    </table>
+                    <div style="margin: 12px 0; padding: 10px; background: #f9fafb; border-radius: 8px; display: flex; justify-content: space-between; font-weight:700; font-size:12px;">
+                        <span>Estimated Budget:</span>
+                        <span id="boq-total-cost" style="color: var(--accent-green);">₹0</span>
+                    </div>
+
+                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                        <button id="tool-export-obj" class="btn-pill-light" style="flex: 1; font-size: 11px; padding: 8px; border-radius: 6px;">💾 Export OBJ</button>
+                        <button id="btn-export-ifc" class="btn-pill-dark" style="flex: 1; font-size: 11px; padding: 8px; border-radius: 6px; background: #4f46e5; border-color: #4f46e5;">🏢 Export IFC4</button>
+                    </div>
+                    <button id="btn-generate-report" class="btn-pill-light" style="width: 100%; font-size: 11px; margin-top: 8px; padding: 8px; border-radius: 6px;">📑 Print Audit Report PDF</button>
+                </div>
+
+                <!-- TAB 5: Architectural Copilot -->
+                <div id="tab-copilot" class="tab-content">
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">Architectural Copilot</h4>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">Ask natural-language compliance, room, or cost questions:</p>
+                    <div style="display: flex; gap: 6px;">
+                        <input type="text" id="copilot-input" placeholder="e.g. Which rooms violate NBC?" style="flex:1; padding:8px; border:1px solid var(--border-light); border-radius:6px; font-size:11px;" />
+                        <button id="btn-copilot-ask" class="btn-pill-dark" style="padding:8px 12px; font-size:11px; border-radius: 6px;">Ask</button>
+                    </div>
+                    <div id="copilot-output" style="margin-top: 12px; font-size: 11px; line-height: 1.5; color: #374151;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile QR Modal -->
+    <div id="modal-qr" class="modal">
+        <div class="modal-card">
+            <h3 style="font-size: 16px; font-weight: 700;">Mobile Touch Inspection</h3>
+            <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Connect phone to same Wi-Fi and scan:</p>
+            <img id="qr-img-placeholder" class="qr-img" src="" alt="QR Code" />
+            <a id="qr-mobile-url" href="#" target="_blank" style="font-size: 11px; color: var(--primary-blue); text-decoration: none; word-break: break-all;"></a>
+            <button id="btn-close-qr" class="btn-pill-light" style="width: 100%; margin-top: 14px; padding: 8px; border-radius: 6px;">Close</button>
+        </div>
+    </div>
+
+    <script src="/static/js/viewer3d.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
