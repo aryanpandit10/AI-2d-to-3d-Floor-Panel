@@ -1,210 +1,199 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Patrick Architect — Mobile 3D Inspector</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: #0f172a;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
-      width: 100vw;
-      height: 100vh;
-    }
-    #stage { width: 100%; height: 100%; }
-    .header-bar {
-      position: absolute;
-      top: 16px; left: 16px; right: 16px;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 12px 16px;
-      border-radius: 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 10;
-    }
-    .header-bar h1 { font-size: 0.95rem; font-weight: 700; color: #f8fafc; }
-    .header-bar span { font-size: 0.72rem; color: #38bdf8; font-weight: 600; }
-    
-    .footer-dock {
-      position: absolute;
-      bottom: 24px; left: 16px; right: 16px;
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 12px 16px;
-      border-radius: 16px;
-      display: flex;
-      justify-content: space-around;
-      align-items: center;
-      z-index: 10;
-    }
-    .btn-mobile {
-      background: #1e293b;
-      color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      padding: 8px 14px;
-      border-radius: 20px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .btn-mobile.active { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
-    
-    #loading-toast {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      padding: 16px 24px;
-      border-radius: 12px;
-      font-size: 0.85rem;
-      z-index: 20;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Patrick Architect — Mobile Touch Twin</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { width: 100vw; height: 100vh; overflow: hidden; background: #0f172a; color: #fff; }
+        #canvas-box { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        
+        .header-bar {
+            position: absolute; top: 12px; left: 12px; right: 12px;
+            background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px);
+            border: 1px solid #334155; border-radius: 12px;
+            padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;
+            z-index: 20;
+        }
+        .header-bar h2 { font-size: 14px; font-weight: 700; color: #38bdf8; }
+        .header-bar span { font-size: 11px; background: #0369a1; padding: 3px 8px; border-radius: 10px; }
+
+        .touch-hud {
+            position: absolute; bottom: 16px; left: 12px; right: 12px;
+            background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px);
+            border: 1px solid #334155; border-radius: 12px;
+            padding: 12px; z-index: 20; display: flex; flex-direction: column; gap: 8px;
+        }
+        .metrics-grid { display: flex; justify-content: space-around; font-size: 12px; }
+        .metrics-grid strong { color: #4ade80; display: block; font-size: 14px; margin-top: 2px; }
+
+        .btn-row { display: flex; gap: 8px; }
+        .btn-touch {
+            flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #475569;
+            background: #1e293b; color: #fff; font-size: 12px; font-weight: 600; text-align: center;
+        }
+        .btn-touch.active { background: #0284c7; border-color: #38bdf8; }
+    </style>
 </head>
 <body>
-
-  <div class="header-bar">
-    <div>
-      <h1>PATRICK ARCHITECT</h1>
-      <span id="room-count-label">Loading BIM Model...</span>
+    <div class="header-bar">
+        <h2>📱 Patrick Architect 3D</h2>
+        <span id="room-count-badge">Loading...</span>
     </div>
-    <span style="color:#10b981;">● Live Sync</span>
-  </div>
 
-  <div id="loading-toast">Downloading 3D Digital Twin...</div>
-  <div id="stage"></div>
+    <div id="canvas-box"></div>
 
-  <div class="footer-dock">
-    <button class="btn-mobile active" id="btn-mode-3d">3D Orbit</button>
-    <button class="btn-mobile" id="btn-mode-top">Top View</button>
-    <button class="btn-mobile" id="btn-reset">Reset View</button>
-  </div>
+    <div class="touch-hud">
+        <div class="metrics-grid">
+            <div>Walls: <strong id="m-walls">--</strong></div>
+            <div>Spaces: <strong id="m-spaces">--</strong></div>
+            <div>CPWD Cost: <strong id="m-cost">--</strong></div>
+        </div>
+        <div class="btn-row">
+            <button id="btn-touch-sunset" class="btn-touch">🌅 Sunset (18:00)</button>
+            <button id="btn-touch-reset" class="btn-touch">🎯 Reset View</button>
+        </div>
+    </div>
 
-  <script>
-    const sessionId = "{{ session_id }}";
-    const container = document.getElementById('stage');
+    <script>
+        const sessionId = "{{ session_id }}";
+        let scene, camera, renderer, controls, dirLight, hemiLight;
+        let houseGroup = new THREE.Group();
+        let furnitureGroup = new THREE.Group();
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f172a);
+        function initScene() {
+            const container = document.getElementById('canvas-box');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf6f6f4);
 
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(24, 28, 26);
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(22, 26, 24);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    container.appendChild(renderer.domElement);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
 
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.target.set(0, 1.2, 0);
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05;
 
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x334155, 0.9);
-    scene.add(hemiLight);
+            hemiLight = new THREE.HemisphereLight(0xffffff, 0xd4d8d1, 0.8);
+            scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfff7ed, 0.9);
-    dirLight.position.set(20, 35, 15);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
+            dirLight = new THREE.DirectionalLight(0xfff7e6, 1.2);
+            dirLight.position.set(20, 28, 18);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
 
-    const grid = new THREE.GridHelper(60, 60, 0x38bdf8, 0x1e293b);
-    grid.position.y = -0.01;
-    scene.add(grid);
+            const grid = new THREE.GridHelper(60, 60, 0x0284c7, 0xe2e8f0);
+            grid.position.y = -0.16;
+            scene.add(grid);
 
-    const modelGroup = new THREE.Group();
-    scene.add(modelGroup);
+            scene.add(houseGroup);
+            scene.add(furnitureGroup);
 
-    fetch(`/api/mobile_model/${sessionId}`)
-      .then(res => res.json())
-      .then(data => {
-        document.getElementById('loading-toast').style.display = 'none';
-        document.getElementById('room-count-label').innerText = `${data.rooms.length} Rooms · ${data.analytics.total_area_sqft} sq.ft.`;
-        build3DModel(data);
-      })
-      .catch(err => {
-        document.getElementById('loading-toast').innerText = "Failed to load model.";
-      });
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
 
-    function build3DModel(data) {
-      const slabGeo = new THREE.BoxGeometry(data.width + 1.2, 0.3, data.height + 1.2);
-      const slabMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
-      const slab = new THREE.Mesh(slabGeo, slabMat);
-      slab.position.y = -0.15;
-      modelGroup.add(slab);
-
-      const floorShades = [0xdfcfb7, 0xd4c2a7, 0xebdcc7, 0xcaba9e];
-      (data.rooms || []).forEach((room, idx) => {
-        const rGeo = new THREE.PlaneGeometry(room.width * 0.96, room.height * 0.96);
-        const rMat = new THREE.MeshStandardMaterial({ color: floorShades[idx % floorShades.length], roughness: 0.4 });
-        const rMesh = new THREE.Mesh(rGeo, rMat);
-        rMesh.rotation.x = -Math.PI / 2;
-        rMesh.position.set(room.x, 0.02, room.z);
-        modelGroup.add(rMesh);
-      });
-
-      const wallMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35 });
-      const wallH = data.wall_height || 2.8;
-
-      data.walls.forEach(segment => {
-        for (let i = 0; i < segment.length - 1; i++) {
-          const p1 = segment[i];
-          const p2 = segment[i + 1];
-          const dx = p2.x - p1.x;
-          const dz = p2.z - p1.z;
-          const len = Math.sqrt(dx * dx + dz * dz);
-          if (len < 0.3) continue;
-
-          const angle = Math.atan2(dz, dx);
-          const wMesh = new THREE.Mesh(new THREE.BoxGeometry(len, wallH, 0.22), wallMat);
-          wMesh.position.set((p1.x + p2.x) / 2, wallH / 2, (p1.z + p2.z) / 2);
-          wMesh.rotation.y = -angle;
-          modelGroup.add(wMesh);
+            animate();
         }
-      });
-    }
 
-    document.getElementById('btn-mode-top').addEventListener('click', function() {
-      document.querySelectorAll('.btn-mobile').forEach(b => b.classList.remove('active'));
-      this.classList.add('active');
-      camera.position.set(0, 42, 0.001);
-      controls.target.set(0, 0, 0);
-    });
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
 
-    document.getElementById('btn-mode-3d').addEventListener('click', function() {
-      document.querySelectorAll('.btn-mobile').forEach(b => b.classList.remove('active'));
-      this.classList.add('active');
-      camera.position.set(24, 28, 26);
-      controls.target.set(0, 1.2, 0);
-    });
+        function renderData(data) {
+            document.getElementById('m-walls').textContent = data.summary.total_walls;
+            document.getElementById('m-spaces').textContent = data.summary.total_rooms;
+            document.getElementById('m-cost').textContent = data.summary.total_cost_inr;
+            document.getElementById('room-count-badge').textContent = `${data.summary.total_rooms} Rooms`;
 
-    document.getElementById('btn-reset').addEventListener('click', function() {
-      camera.position.set(24, 28, 26);
-      controls.target.set(0, 1.2, 0);
-    });
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0xded8ce, roughness: 0.8 });
+            const capMat = new THREE.MeshStandardMaterial({ color: 0x2b2d42 });
 
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+            data.walls.forEach(w => {
+                const dx = w.p2[0] - w.p1[0];
+                const dz = w.p2[1] - w.p1[1];
+                const len = Math.hypot(dx, dz);
+                const angle = Math.atan2(dz, dx);
+                const midX = (w.p1[0] + w.p2[0]) / 2;
+                const midZ = (w.p1[1] + w.p2[1]) / 2;
 
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
-  </script>
+                const wallMesh = new THREE.Mesh(new THREE.BoxGeometry(len, 2.8, 0.23), wallMat);
+                wallMesh.position.set(midX, 1.4, midZ);
+                wallMesh.rotation.y = -angle;
+                wallMesh.castShadow = true;
+                houseGroup.add(wallMesh);
+
+                const capMesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.05, 0.26), capMat);
+                capMesh.position.set(midX, 2.82, midZ);
+                capMesh.rotation.y = -angle;
+                houseGroup.add(capMesh);
+            });
+
+            if (data.rooms) {
+                const colors = [0xeae2b7, 0xfdf0d5, 0xe8e8e4, 0xd8e2dc];
+                data.rooms.forEach((r, idx) => {
+                    const b = r.bounds;
+                    const floor = new THREE.Mesh(
+                        new THREE.PlaneGeometry(b.w, b.d),
+                        new THREE.MeshStandardMaterial({ color: colors[idx % colors.length] })
+                    );
+                    floor.rotation.x = -Math.PI / 2;
+                    floor.position.set(b.x + b.w / 2, 0.02, b.z + b.d / 2);
+                    houseGroup.add(floor);
+                });
+            }
+
+            // Ground base slab
+            const slab = new THREE.Mesh(new THREE.BoxGeometry(40, 0.3, 32), new THREE.MeshStandardMaterial({ color: 0xefede8 }));
+            slab.position.set(0, -0.15, 0);
+            houseGroup.add(slab);
+        }
+
+        let isSunset = false;
+        document.getElementById('btn-touch-sunset').addEventListener('click', () => {
+            isSunset = !isSunset;
+            if (isSunset) {
+                dirLight.color.setHex(0xf97316);
+                hemiLight.color.setHex(0xfde68a);
+                scene.background = new THREE.Color(0xfde68a);
+                document.getElementById('btn-touch-sunset').classList.add('active');
+            } else {
+                dirLight.color.setHex(0xfff7e6);
+                hemiLight.color.setHex(0xffffff);
+                scene.background = new THREE.Color(0xf6f6f4);
+                document.getElementById('btn-touch-sunset').classList.remove('active');
+            }
+        });
+
+        document.getElementById('btn-touch-reset').addEventListener('click', () => {
+            camera.position.set(22, 26, 24);
+            controls.target.set(0, 0, 0);
+        });
+
+        initScene();
+
+        // Fetch model payload for this active session
+        fetch(`/api/session_data/${sessionId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.walls) renderData(data);
+            })
+            .catch(err => {
+                console.error("Failed to load session model:", err);
+            });
+    </script>
 </body>
 </html>
