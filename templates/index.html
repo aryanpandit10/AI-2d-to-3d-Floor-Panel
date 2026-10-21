@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PATRICK ARCHITECT — BIM Studio v5.0 Enterprise</title>
-    <!-- Three.js, OrbitControls, and PointerLockControls -->
+    <!-- Three.js, OrbitControls, PointerLockControls, and TransformControls -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     
     <style>
         :root {
@@ -37,7 +38,6 @@
             color: var(--text-dark);
         }
 
-        /* Screen Routing Architecture */
         .screen {
             display: none;
             width: 100vw;
@@ -49,12 +49,15 @@
             z-index: 10;
         }
         .screen.active {
-            display: flex;
+            display: flex !important;
             flex-direction: column;
             z-index: 20;
         }
+        #screen-studio.active {
+            display: flex !important;
+            flex-direction: row !important;
+        }
 
-        /* Top Enterprise Navbar */
         .header-nav {
             width: 100%;
             height: 72px;
@@ -97,7 +100,6 @@
             letter-spacing: 0.2px;
         }
 
-        /* Nav Pills Container */
         .nav-pills {
             display: flex;
             align-items: center;
@@ -129,7 +131,6 @@
             font-weight: 700;
         }
 
-        /* Status Indicator */
         .system-status {
             display: flex;
             align-items: center;
@@ -146,7 +147,6 @@
             box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
         }
 
-        /* SCREEN 1: Hero Section */
         #screen-landing {
             background-color: var(--bg-canvas);
             background-image: radial-gradient(#d1d5db 0.8px, transparent 0.8px);
@@ -226,7 +226,6 @@
             border-color: #d1d5db;
         }
 
-        /* Bottom Technical Metrics Grid */
         .bottom-features-grid {
             max-width: 980px;
             width: 100%;
@@ -252,7 +251,6 @@
             color: #6b7280;
         }
 
-        /* SCREEN 2: Blueprint Ingestion Screen */
         #screen-upload {
             background-color: var(--bg-canvas);
             align-items: center;
@@ -299,7 +297,6 @@
             border-radius: 10px;
         }
 
-        /* SCREEN 3: Verification & Pre-Studio Dashboard */
         #screen-analysis {
             background-color: var(--bg-canvas);
             align-items: center;
@@ -340,21 +337,6 @@
             margin-top: 4px;
         }
 
-        /* SCREEN 4: 3D BIM Studio (Full Viewport Split) */
-        #screen-studio {
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-            display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        #screen-studio.active {
-            display: flex !important;
-            flex-direction: row !important;
-        }
-        
         .studio-stage {
             flex: 1 1 auto;
             min-width: 0;
@@ -369,7 +351,6 @@
             display: block;
         }
 
-        /* Studio Left Dock */
         .dock-left {
             position: absolute;
             left: 18px;
@@ -407,7 +388,6 @@
             color: var(--primary-blue);
         }
 
-        /* Right Inspector Sidebar */
         .studio-sidebar {
             width: var(--sidebar-width) !important;
             min-width: var(--sidebar-width) !important;
@@ -496,7 +476,6 @@
             border-color: var(--primary-blue);
         }
 
-        /* Banners & Modal */
         #cad-readout-banner, #walk-instruction-banner, #placing-banner, #emergency-banner {
             display: none;
             position: absolute;
@@ -568,7 +547,6 @@
 </head>
 <body>
 
-    <!-- SCREEN 1: Overview Landing Page -->
     <div id="screen-landing" class="screen active">
         <header class="header-nav">
             <div class="brand-container" onclick="goToScreen('screen-landing')">
@@ -624,7 +602,6 @@
         </footer>
     </div>
 
-    <!-- SCREEN 2: Blueprint Ingestion Screen -->
     <div id="screen-upload" class="screen">
         <header class="header-nav">
             <div class="brand-container" onclick="goToScreen('screen-landing')">
@@ -679,7 +656,6 @@
         </div>
     </div>
 
-    <!-- SCREEN 3: Verification & Pre-Studio Dashboard -->
     <div id="screen-analysis" class="screen">
         <header class="header-nav">
             <div class="brand-container" onclick="goToScreen('screen-landing')">
@@ -721,10 +697,8 @@
         </div>
     </div>
 
-    <!-- SCREEN 4: 3D BIM Studio (Main Digital Twin) -->
     <div id="screen-studio" class="screen">
         <div class="studio-stage">
-            <!-- Left Dock -->
             <div class="dock-left">
                 <button id="dock-home" class="dock-btn" title="Home" onclick="goToScreen('screen-landing')">🏠</button>
                 <button id="dock-upload" class="dock-btn" title="Upload New" onclick="goToScreen('screen-upload')">📁</button>
@@ -738,7 +712,6 @@
                 <button id="tool-qr" class="dock-btn" title="Mobile QR Inspection">📱</button>
             </div>
 
-            <!-- Overlays -->
             <div id="cad-readout-banner">CAD Tape Measure: Click Point A</div>
             <div id="emergency-banner">🔥 EMERGENCY EVACUATION: NBC 2016 STATUTORY EXIT PATH</div>
             <div id="placing-banner">🛠️ Click anywhere on the floor to place your furniture!</div>
@@ -756,7 +729,6 @@
             <div id="three-stage"></div>
         </div>
 
-        <!-- Right Inspector Sidebar -->
         <div class="studio-sidebar">
             <div class="sidebar-tabs">
                 <button class="tab-btn active" data-tab="tab-furn">🛋️ Furnish</button>
@@ -767,10 +739,29 @@
             </div>
 
             <div class="sidebar-content">
-                <!-- TAB 1: Smart Furniture Layout -->
                 <div id="tab-furn" class="tab-content active">
+                    <div style="background: #f8fafc; border: 1px solid var(--border-light); border-radius: 10px; padding: 12px; margin-bottom: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <strong style="font-size: 12px; color: var(--text-dark);">✨ Virtual Staging Aesthetics</strong>
+                            <span style="font-size: 10px; background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 8px; font-weight: 700;">SnapHouse Mode</span>
+                        </div>
+                        
+                        <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Interior Design Theme:</label>
+                        <select id="staging-theme-select" style="width: 100%; padding: 7px; border: 1px solid var(--border-light); border-radius: 6px; font-size: 11px; margin-bottom: 10px; background: #fff;">
+                            <option value="modern">Scandinavian Minimalist (Warm Wood & Neutral)</option>
+                            <option value="luxury">Luxury Contemporary (Dark Walnut & Velvet)</option>
+                            <option value="industrial">Urban Industrial (Raw Concrete & Matte Steel)</option>
+                            <option value="boho">Earthy Japandi (Oatmeal Fabric & Light Oak)</option>
+                        </select>
+
+                        <div style="display: flex; gap: 8px;">
+                            <button id="btn-apply-theme" class="btn-pill-dark" style="flex: 1; padding: 8px; font-size: 11px; border-radius: 6px;">🎨 Apply Style</button>
+                            <button id="btn-render-photoreal" class="btn-pill-light" style="flex: 1; padding: 8px; font-size: 11px; border-radius: 6px;">📸 AI Photo Render</button>
+                        </div>
+                    </div>
+
                     <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">Smart Furniture Layout</h4>
-                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">Auto-stage rooms or pick items below to place manually:</p>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">Click item to place, then use <strong>[G]</strong> to Move, <strong>[R]</strong> to Rotate, <strong>[S]</strong> to Scale:</p>
 
                     <div style="display: flex; gap: 8px; margin-bottom: 14px;">
                         <button id="btn-auto-stage" class="btn-pill-dark" style="flex: 1; font-size: 11px; padding: 8px; border-radius: 8px;">⚡ AI Auto-Stage All</button>
@@ -800,7 +791,6 @@
                     </div>
                 </div>
 
-                <!-- TAB 2: Wall Finishes & Colors -->
                 <div id="tab-walls" class="tab-content">
                     <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">PBR Wall Finishes</h4>
                     <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Choose custom wall paint color or material texture:</p>
@@ -829,7 +819,6 @@
                     <input type="range" id="param-section-slider" min="0.4" max="4.0" step="0.1" value="4.0" style="width: 100%; margin-top: 6px;" />
                 </div>
 
-                <!-- TAB 3: Climate (Sunset & Daylight & Ventilation) -->
                 <div id="tab-sun" class="tab-content">
                     <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">Diurnal Sun & Sunset Simulation</h4>
                     <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
@@ -853,7 +842,6 @@
                     </label>
                 </div>
 
-                <!-- TAB 4: Design Doctor & Costing -->
                 <div id="tab-doctor" class="tab-content">
                     <div style="background:#f9fafb; border:1px solid var(--border-light); padding:12px; border-radius:10px; margin-bottom:12px;">
                         <div style="font-size:11px; color:var(--text-muted);">BUILDING HEALTH INDEX</div>
@@ -876,7 +864,6 @@
                     <button id="btn-generate-report" class="btn-pill-light" style="width: 100%; font-size: 11px; margin-top: 8px; padding: 8px; border-radius: 6px;">📑 Print Audit Report PDF</button>
                 </div>
 
-                <!-- TAB 5: Architectural Copilot -->
                 <div id="tab-copilot" class="tab-content">
                     <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">Architectural Copilot</h4>
                     <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">Ask natural-language compliance, room, or cost questions:</p>
@@ -890,7 +877,6 @@
         </div>
     </div>
 
-    <!-- Mobile QR Modal -->
     <div id="modal-qr" class="modal">
         <div class="modal-card">
             <h3 style="font-size: 16px; font-weight: 700;">Mobile Touch Inspection</h3>
@@ -898,6 +884,22 @@
             <img id="qr-img-placeholder" class="qr-img" src="" alt="QR Code" />
             <a id="qr-mobile-url" href="#" target="_blank" style="font-size: 11px; color: var(--primary-blue); text-decoration: none; word-break: break-all;"></a>
             <button id="btn-close-qr" class="btn-pill-light" style="width: 100%; margin-top: 14px; padding: 8px; border-radius: 6px;">Close</button>
+        </div>
+    </div>
+
+    <div id="modal-ai-render" class="modal">
+        <div class="modal-card" style="width: 520px; max-width: 90vw;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <strong style="font-size: 14px;">Photorealistic Staged Render</strong>
+                <button id="btn-close-render" style="background: none; border: none; font-size: 16px; cursor: pointer;">✕</button>
+            </div>
+            <div id="render-loading" style="display: none; padding: 40px; font-size: 12px; color: #64748b;">
+                Synthesizing realistic lighting, fabric shaders, and decor...
+            </div>
+            <img id="render-result-img" src="" alt="Photorealistic Render" style="width: 100%; border-radius: 8px; display: none;" />
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+                <a id="btn-download-render" class="btn-pill-dark" download="staged_room.png" style="text-decoration: none; padding: 8px 16px; font-size: 12px; display: none;">💾 Download HD</a>
+            </div>
         </div>
     </div>
 

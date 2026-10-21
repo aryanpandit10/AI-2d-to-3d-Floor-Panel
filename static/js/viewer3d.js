@@ -1,7 +1,6 @@
 /**
- * Patrick Architect - Three.js WebGL BIM Engine
- * Fully Architectured Furniture Staging, Clean Initial Scene,
- * Sunset 18:00 Lighting, and Precision Customer Placement.
+ * Patrick Architect - Core 3D WebGL Rendering Engine (viewer3d.js)
+ * Includes TransformControls for interactive Scaling, Rotation, Elevation, and Dragging.
  */
 
 class HouseViewer {
@@ -10,37 +9,37 @@ class HouseViewer {
         this.scene = null;
         this.camera = null;
         this.renderer = null;
-        this.controls = null;
-        this.fpControls = null;
+        this.orbitControls = null;
+        this.transformControls = null;
+        this.pointerLockControls = null;
 
-        // Group Hierarchy
         this.houseGroup = new THREE.Group();
-        this.doorsGroup = new THREE.Group();
-        this.windowsGroup = new THREE.Group();
         this.furnitureGroup = new THREE.Group();
-        this.ventilationGroup = new THREE.Group();
-        this.defectsGroup = new THREE.Group();
-        this.measureGroup = new THREE.Group();
         this.dimensionGroup = new THREE.Group();
-        this.egressGroup = new THREE.Group();
+        this.fireGroup = new THREE.Group();
         this.avatarGroup = new THREE.Group();
-        this.overlayGroup = new THREE.Group();
+        this.ventGroup = new THREE.Group();
 
-        // Lighting & Physics
         this.dirLight = null;
         this.hemiLight = null;
-        this.sectionPlane = null;
-        this.raycaster = new THREE.Raycaster();
-        this.mouse = new THREE.Vector2();
+        this.sunSphere = null;
 
-        // State Flags
-        this.selectedPlacementType = null;
-        this.cadModeActive = false;
+        this.currentData = null;
+        this.wallMaterial = null;
+        this.capMaterial = null;
+        this.clippingPlane = null;
+        this.selectedFurniture = null;
+
+        this.isFireActive = false;
+        this.isDimensionsActive = false;
+        this.isAvatarActive = false;
+        this.isCadMode = false;
+        this.isOverlayActive = false;
+        this.isWalkthrough = false;
+        this.isVentActive = false;
+        this.placementItemType = null;
         this.cadPoints = [];
-        this.activeData = null;
 
-        // First-Person Walkthrough
-        this.isWalkMode = false;
         this.moveForward = false;
         this.moveBackward = false;
         this.moveLeft = false;
@@ -49,26 +48,20 @@ class HouseViewer {
         this.direction = new THREE.Vector3();
         this.prevTime = performance.now();
 
-        this.wallMaterial = new THREE.MeshStandardMaterial({
-            color: 0xded8ce,
-            roughness: 0.85,
-            metalness: 0.05
-        });
-
         this.init();
     }
 
     init() {
-        const width = this.container.clientWidth || window.innerWidth;
-        const height = this.container.clientHeight || window.innerHeight;
-
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0xf6f6f4);
+
+        const width = this.container.clientWidth || window.innerWidth;
+        const height = this.container.clientHeight || window.innerHeight;
 
         this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
         this.camera.position.set(24, 28, 26);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = true;
@@ -76,93 +69,605 @@ class HouseViewer {
         this.renderer.localClippingEnabled = true;
         this.container.appendChild(this.renderer.domElement);
 
-        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.05;
-        this.controls.maxPolarAngle = Math.PI / 2 - 0.02;
+        this.orbitControls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.orbitControls.enableDamping = true;
+        this.orbitControls.dampingFactor = 0.08;
+        this.orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
 
-        if (typeof THREE.PointerLockControls !== 'undefined') {
-            this.fpControls = new THREE.PointerLockControls(this.camera, this.renderer.domElement);
-            this.fpControls.addEventListener('unlock', () => {
-                if (this.isWalkMode) this.exitWalkthrough();
-            });
-        }
+        this.transformControls = new THREE.TransformControls(this.camera, this.renderer.domElement);
+        this.transformControls.size = 0.75;
+        this.scene.add(this.transformControls);
 
-        this.hemiLight = new THREE.HemisphereLight(0xffffff, 0xd4d8d1, 0.75);
+        this.transformControls.addEventListener('dragging-changed', (event) => {
+            this.orbitControls.enabled = !event.value;
+        });
+
+        this.pointerLockControls = new THREE.PointerLockControls(this.camera, document.body);
+
+        this.clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 4.0);
+
+        this.wallMaterial = new THREE.MeshStandardMaterial({
+            color: 0xded8ce,
+            roughness: 0.8,
+            metalness: 0.05,
+            clippingPlanes: [this.clippingPlane],
+            clipShadows: true
+        });
+
+        this.capMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2b2d42,
+            roughness: 0.5,
+            metalness: 0.1,
+            clippingPlanes: [this.clippingPlane]
+        });
+
+        this.setupLights();
+        this.setupEnvironment();
+        this.setupInteraction();
+
+        this.scene.add(this.houseGroup);
+        this.scene.add(this.furnitureGroup);
+        this.scene.add(this.dimensionGroup);
+        this.scene.add(this.fireGroup);
+        this.scene.add(this.avatarGroup);
+        this.scene.add(this.ventGroup);
+
+        window.addEventListener('resize', () => this.onWindowResize());
+        this.animate();
+    }
+
+    setupLights() {
+        this.hemiLight = new THREE.HemisphereLight(0xffffff, 0xd4d8d1, 0.85);
         this.scene.add(this.hemiLight);
 
-        this.dirLight = new THREE.DirectionalLight(0xfff7e6, 1.2);
-        this.dirLight.position.set(25, 30, 20);
+        this.dirLight = new THREE.DirectionalLight(0xfff7e6, 1.25);
+        this.dirLight.position.set(20, 32, 18);
         this.dirLight.castShadow = true;
         this.dirLight.shadow.mapSize.width = 2048;
         this.dirLight.shadow.mapSize.height = 2048;
-        this.dirLight.shadow.camera.near = 0.5;
-        this.dirLight.shadow.camera.far = 150;
-        const d = 32;
-        this.dirLight.shadow.camera.left = -d;
-        this.dirLight.shadow.camera.right = d;
-        this.dirLight.shadow.camera.top = d;
-        this.dirLight.shadow.camera.bottom = -d;
+        this.dirLight.shadow.bias = -0.0001;
         this.scene.add(this.dirLight);
 
-        const grid = new THREE.GridHelper(80, 80, 0x0284c7, 0xe2e8f0);
+        const sunGeo = new THREE.SphereGeometry(1.2, 16, 16);
+        const sunMat = new THREE.MeshBasicMaterial({ color: 0xffedd5 });
+        this.sunSphere = new THREE.Mesh(sunGeo, sunMat);
+        this.sunSphere.position.copy(this.dirLight.position);
+        this.scene.add(this.sunSphere);
+    }
+
+    setupEnvironment() {
+        const grid = new THREE.GridHelper(70, 70, 0x0284c7, 0xe2e8f0);
         grid.position.y = -0.16;
         this.scene.add(grid);
 
-        this.sectionPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 10.0);
-        this.wallMaterial.clippingPlanes = [this.sectionPlane];
-        this.wallMaterial.clipShadows = true;
-
-        this.scene.add(this.houseGroup);
-        this.scene.add(this.doorsGroup);
-        this.scene.add(this.windowsGroup);
-        this.scene.add(this.furnitureGroup);
-        this.scene.add(this.ventilationGroup);
-        this.scene.add(this.defectsGroup);
-        this.scene.add(this.measureGroup);
-        this.scene.add(this.dimensionGroup);
-        this.scene.add(this.egressGroup);
-        this.scene.add(this.avatarGroup);
-        this.scene.add(this.overlayGroup);
-
-        window.addEventListener('resize', () => this.onWindowResize());
-        this.renderer.domElement.addEventListener('pointerdown', (e) => this.onPointerDown(e));
-
-        this.setupKeyboard();
-        this.animate = this.animate.bind(this);
-        requestAnimationFrame(this.animate);
+        const groundGeo = new THREE.PlaneGeometry(160, 160);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf9, roughness: 0.9 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.18;
+        ground.receiveShadow = true;
+        this.scene.add(ground);
     }
 
-    setupKeyboard() {
-        document.addEventListener('keydown', (e) => {
-            if (!this.isWalkMode) return;
-            if (e.code === 'KeyW') this.moveForward = true;
-            if (e.code === 'KeyA') this.moveLeft = true;
-            if (e.code === 'KeyS') this.moveBackward = true;
-            if (e.code === 'KeyD') this.moveRight = true;
+    setupInteraction() {
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        this.renderer.domElement.addEventListener('click', (event) => {
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, this.camera);
+
+            if (this.placementItemType) {
+                const intersects = raycaster.intersectObjects(this.houseGroup.children, true);
+                if (intersects.length > 0) {
+                    const pt = intersects[0].point;
+                    this.addFurnitureItem(this.placementItemType, pt.x, pt.z);
+                    this.setPlacementItem(null);
+                }
+                return;
+            }
+
+            const furnitureIntersects = raycaster.intersectObjects(this.furnitureGroup.children, true);
+            if (furnitureIntersects.length > 0) {
+                let rootObj = furnitureIntersects[0].object;
+                while (rootObj.parent && rootObj.parent !== this.furnitureGroup) {
+                    rootObj = rootObj.parent;
+                }
+                this.selectedFurniture = rootObj;
+                this.transformControls.attach(rootObj);
+                return;
+            }
+
+            if (this.isCadMode) {
+                const intersects = raycaster.intersectObjects(this.houseGroup.children, true);
+                if (intersects.length > 0) {
+                    const pt = intersects[0].point;
+                    this.cadPoints.push(pt);
+                    const banner = document.getElementById('cad-readout-banner');
+                    if (this.cadPoints.length === 1) {
+                        if (banner) banner.textContent = `Point A: [${pt.x.toFixed(2)}m, ${pt.z.toFixed(2)}m]. Click Point B.`;
+                    } else if (this.cadPoints.length === 2) {
+                        const distM = this.cadPoints[0].distanceTo(this.cadPoints[1]);
+                        const distFt = distM * 3.28084;
+                        if (banner) banner.textContent = `📏 Measured Distance: ${distM.toFixed(2)} m (${distFt.toFixed(2)} ft)`;
+                        this.drawCadMeasureLine(this.cadPoints[0], this.cadPoints[1]);
+                        this.cadPoints = [];
+                    }
+                }
+                return;
+            }
+
+            const intersects = raycaster.intersectObjects(this.houseGroup.children, true);
+            if (intersects.length > 0) {
+                const obj = intersects[0].object;
+                if (obj.userData && obj.userData.info) {
+                    this.showInspector(obj.userData.info);
+                }
+            }
         });
-        document.addEventListener('keyup', (e) => {
-            if (!this.isWalkMode) return;
-            if (e.code === 'KeyW') this.moveForward = false;
-            if (e.code === 'KeyA') this.moveLeft = false;
-            if (e.code === 'KeyS') this.moveBackward = false;
-            if (e.code === 'KeyD') this.moveRight = false;
+
+        window.addEventListener('keydown', (event) => {
+            switch (event.code) {
+                case 'KeyG':
+                    this.transformControls.setMode('translate');
+                    break;
+                case 'KeyR':
+                    this.transformControls.setMode('rotate');
+                    break;
+                case 'KeyS':
+                    this.transformControls.setMode('scale');
+                    break;
+                case 'Escape':
+                    this.transformControls.detach();
+                    this.selectedFurniture = null;
+                    break;
+            }
         });
+
+        const onKeyDown = (event) => {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW': this.moveForward = true; break;
+                case 'ArrowLeft':
+                case 'KeyA': this.moveLeft = true; break;
+                case 'ArrowDown':
+                case 'KeyS': this.moveBackward = true; break;
+                case 'ArrowRight':
+                case 'KeyD': this.moveRight = true; break;
+            }
+        };
+
+        const onKeyUp = (event) => {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW': this.moveForward = false; break;
+                case 'ArrowLeft':
+                case 'KeyA': this.moveLeft = false; break;
+                case 'ArrowDown':
+                case 'KeyS': this.moveBackward = false; break;
+                case 'ArrowRight':
+                case 'KeyD': this.moveRight = false; break;
+            }
+        };
+
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+
+        this.pointerLockControls.addEventListener('unlock', () => {
+            this.isWalkthrough = false;
+            document.getElementById('walk-crosshair').style.display = 'none';
+            document.getElementById('walk-instruction-banner').style.display = 'none';
+            const btn = document.getElementById('tool-walk');
+            if (btn) btn.classList.remove('active');
+            this.orbitControls.enabled = true;
+        });
+    }
+
+    renderReconstruction(data) {
+        this.currentData = data;
+        this.transformControls.detach();
+        this.clearGroup(this.houseGroup);
+        this.clearGroup(this.furnitureGroup);
+        this.clearGroup(this.dimensionGroup);
+        this.clearGroup(this.fireGroup);
+        this.clearGroup(this.avatarGroup);
+        this.clearGroup(this.ventGroup);
+
+        const slabMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(42, 0.3, 34),
+            new THREE.MeshStandardMaterial({ color: 0xefede8, roughness: 0.9 })
+        );
+        slabMesh.position.set(0, -0.15, 0);
+        slabMesh.receiveShadow = true;
+        this.houseGroup.add(slabMesh);
+
+        data.walls.forEach(w => {
+            const dx = w.p2[0] - w.p1[0];
+            const dz = w.p2[1] - w.p1[1];
+            const len = Math.hypot(dx, dz);
+            const angle = Math.atan2(dz, dx);
+            const midX = (w.p1[0] + w.p2[0]) / 2;
+            const midZ = (w.p1[1] + w.p2[1]) / 2;
+
+            const wallGeom = new THREE.BoxGeometry(len, 2.8, 0.23);
+            const wallMesh = new THREE.Mesh(wallGeom, this.wallMaterial);
+            wallMesh.position.set(midX, 1.4, midZ);
+            wallMesh.rotation.y = -angle;
+            wallMesh.castShadow = true;
+            wallMesh.receiveShadow = true;
+            wallMesh.userData = { info: { type: 'Wall', data: w } };
+            this.houseGroup.add(wallMesh);
+
+            const capGeom = new THREE.BoxGeometry(len, 0.05, 0.26);
+            const capMesh = new THREE.Mesh(capGeom, this.capMaterial);
+            capMesh.position.set(midX, 2.82, midZ);
+            capMesh.rotation.y = -angle;
+            this.houseGroup.add(capMesh);
+        });
+
+        if (data.rooms) {
+            const palette = [0xeae2b7, 0xfdf0d5, 0xe8e8e4, 0xd8e2dc, 0xf5ebe0];
+            data.rooms.forEach((r, idx) => {
+                const b = r.bounds;
+                const floorGeom = new THREE.PlaneGeometry(b.w, b.d);
+                const floorMat = new THREE.MeshStandardMaterial({
+                    color: palette[idx % palette.length],
+                    roughness: 0.7,
+                    clippingPlanes: [this.clippingPlane]
+                });
+                const floorMesh = new THREE.Mesh(floorGeom, floorMat);
+                floorMesh.rotation.x = -Math.PI / 2;
+                floorMesh.position.set(b.x + b.w / 2, 0.02, b.z + b.d / 2);
+                floorMesh.receiveShadow = true;
+                floorMesh.userData = { info: { type: 'Room', data: r } };
+                this.houseGroup.add(floorMesh);
+            });
+        }
+    }
+
+    setWallColor(colorHex) {
+        if (this.wallMaterial) {
+            this.wallMaterial.color.set(colorHex);
+        }
+    }
+
+    setSectionHeight(val) {
+        if (this.clippingPlane) {
+            this.clippingPlane.constant = val;
+        }
+    }
+
+    updateSunPosition(hour) {
+        const angle = ((hour - 6) / 12) * Math.PI;
+        const radius = 35;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        const z = 18;
+
+        if (this.dirLight) {
+            this.dirLight.position.set(x, Math.max(y, 2), z);
+            if (this.sunSphere) this.sunSphere.position.copy(this.dirLight.position);
+
+            if (hour >= 17.5) {
+                this.dirLight.color.setHex(0xf97316);
+                this.hemiLight.color.setHex(0xfde68a);
+                this.scene.background.setHex(0xfde68a);
+            } else if (hour <= 7.5) {
+                this.dirLight.color.setHex(0xfb923c);
+                this.hemiLight.color.setHex(0xfef3c7);
+                this.scene.background.setHex(0xfef3c7);
+            } else {
+                this.dirLight.color.setHex(0xfff7e6);
+                this.hemiLight.color.setHex(0xffffff);
+                this.scene.background.setHex(0xf6f6f4);
+            }
+        }
+    }
+
+    toggleFireSimulation() {
+        this.isFireActive = !this.isFireActive;
+        const banner = document.getElementById('emergency-banner');
+        if (banner) banner.style.display = this.isFireActive ? 'block' : 'none';
+
+        if (this.isFireActive && this.currentData && this.currentData.egress) {
+            this.clearGroup(this.fireGroup);
+            const pts = this.currentData.egress.path.map(p => new THREE.Vector3(p.pos[0], p.pos[1] + 0.1, p.pos[2]));
+            const curve = new THREE.CatmullRomCurve3(pts);
+            const tubeGeo = new THREE.TubeGeometry(curve, 40, 0.12, 8, false);
+            const tubeMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+            const tube = new THREE.Mesh(tubeGeo, tubeMat);
+            this.fireGroup.add(tube);
+        } else {
+            this.clearGroup(this.fireGroup);
+        }
+        return this.isFireActive;
+    }
+
+    toggleDimensions() {
+        this.isDimensionsActive = !this.isDimensionsActive;
+        if (this.isDimensionsActive && this.currentData) {
+            this.clearGroup(this.dimensionGroup);
+            this.currentData.walls.forEach(w => {
+                const p1 = new THREE.Vector3(w.p1[0], 2.9, w.p1[1]);
+                const p2 = new THREE.Vector3(w.p2[0], 2.9, w.p2[1]);
+                const geom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+                const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x0284c7 }));
+                this.dimensionGroup.add(line);
+            });
+        } else {
+            this.clearGroup(this.dimensionGroup);
+        }
+        return this.isDimensionsActive;
+    }
+
+    toggleAvatar() {
+        this.isAvatarActive = !this.isAvatarActive;
+        if (this.isAvatarActive) {
+            this.clearGroup(this.avatarGroup);
+            const avatar = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.4), new THREE.MeshStandardMaterial({ color: 0x0284c7 }));
+            body.position.y = 0.7;
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), new THREE.MeshStandardMaterial({ color: 0xfde047 }));
+            head.position.y = 1.55;
+            avatar.add(body);
+            avatar.add(head);
+            avatar.position.set(0, 0, 0);
+            this.avatarGroup.add(avatar);
+        } else {
+            this.clearGroup(this.avatarGroup);
+        }
+        return this.isAvatarActive;
+    }
+
+    toggleCADMode() {
+        this.isCadMode = !this.isCadMode;
+        this.cadPoints = [];
+        return this.isCadMode;
+    }
+
+    drawCadMeasureLine(p1, p2) {
+        const geom = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(p1.x, p1.y + 0.05, p1.z),
+            new THREE.Vector3(p2.x, p2.y + 0.05, p2.z)
+        ]);
+        const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 3 }));
+        this.houseGroup.add(line);
+    }
+
+    toggleOverlay() {
+        this.isOverlayActive = !this.isOverlayActive;
+        return this.isOverlayActive;
+    }
+
+    toggleWalkthrough() {
+        this.isWalkthrough = !this.isWalkthrough;
+        if (this.isWalkthrough) {
+            this.transformControls.detach();
+            this.orbitControls.enabled = false;
+            this.camera.position.set(0, 1.65, 0);
+            this.pointerLockControls.lock();
+            document.getElementById('walk-crosshair').style.display = 'block';
+            document.getElementById('walk-instruction-banner').style.display = 'block';
+        } else {
+            this.pointerLockControls.unlock();
+        }
+        return this.isWalkthrough;
+    }
+
+    toggleVentilation() {
+        this.isVentActive = !this.isVentActive;
+        if (this.isVentActive && this.currentData && this.currentData.rooms) {
+            this.clearGroup(this.ventGroup);
+            this.currentData.rooms.forEach(r => {
+                const b = r.bounds;
+                const arrow = new THREE.ArrowHelper(
+                    new THREE.Vector3(1, 0, 0),
+                    new THREE.Vector3(b.x + 0.5, 1.2, b.z + b.d / 2),
+                    b.w - 1,
+                    0x38bdf8
+                );
+                this.ventGroup.add(arrow);
+            });
+        } else {
+            this.clearGroup(this.ventGroup);
+        }
+        return this.isVentActive;
+    }
+
+    resetCamera() {
+        this.camera.position.set(24, 28, 26);
+        this.orbitControls.target.set(0, 0, 0);
+    }
+
+    setPlacementItem(type) {
+        this.placementItemType = type;
+        const banner = document.getElementById('placing-banner');
+        if (banner) banner.style.display = type ? 'block' : 'none';
+    }
+
+    addFurnitureItem(type, x, z) {
+        const item = new THREE.Group();
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.7 });
+        const fabricMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 });
+
+        if (type === 'bed') {
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.4, 1.8), woodMat);
+            frame.position.y = 0.2;
+            const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.3, 1.6), fabricMat);
+            mattress.position.y = 0.5;
+            item.add(frame);
+            item.add(mattress);
+        } else if (type === 'sofa') {
+            const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.4, 0.9), fabricMat);
+            base.position.y = 0.2;
+            const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.7, 0.3), fabricMat);
+            back.position.set(0, 0.55, -0.3);
+            item.add(base);
+            item.add(back);
+        } else if (type === 'dining') {
+            const table = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.75, 1.0), woodMat);
+            table.position.y = 0.375;
+            item.add(table);
+        } else {
+            const box = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.6), woodMat);
+            box.position.y = 0.6;
+            item.add(box);
+        }
+
+        item.position.set(x, 0, z);
+        this.furnitureGroup.add(item);
+
+        this.selectedFurniture = item;
+        this.transformControls.attach(item);
+    }
+
+    autoStageAll() {
+        if (!this.currentData || !this.currentData.rooms) return;
+        this.clearFurniture();
+        this.currentData.rooms.forEach(r => {
+            const b = r.bounds;
+            const cx = b.x + b.w / 2;
+            const cz = b.z + b.d / 2;
+            if (r.name.includes('Bedroom')) {
+                this.addFurnitureItem('bed', cx, cz);
+            } else if (r.name.includes('Living')) {
+                this.addFurnitureItem('sofa', cx, cz);
+            } else if (r.name.includes('Kitchen') || r.name.includes('Dining')) {
+                this.addFurnitureItem('dining', cx, cz);
+            }
+        });
+    }
+
+    clearFurniture() {
+        this.transformControls.detach();
+        this.selectedFurniture = null;
+        this.clearGroup(this.furnitureGroup);
+    }
+
+    applyStagingTheme(themeKey) {
+        const themes = {
+            modern: { wallColor: 0xf5f5f4, furnitureFabric: 0x64748b, wood: 0xd4a373 },
+            luxury: { wallColor: 0x1e293b, furnitureFabric: 0x0f172a, wood: 0x451a03 },
+            industrial: { wallColor: 0x78716c, furnitureFabric: 0x27272a, wood: 0x713f12 },
+            boho: { wallColor: 0xfef3c7, furnitureFabric: 0xd6d3d1, wood: 0xeab308 }
+        };
+
+        const cfg = themes[themeKey] || themes.modern;
+        this.setWallColor(cfg.wallColor);
+
+        this.furnitureGroup.traverse(child => {
+            if (child.isMesh && child.material) {
+                if (child.material.roughness > 0.75) {
+                    child.material.color.setHex(cfg.furnitureFabric);
+                } else {
+                    child.material.color.setHex(cfg.wood);
+                }
+            }
+        });
+    }
+
+    captureViewportImage() {
+        this.transformControls.detach();
+        this.renderer.render(this.scene, this.camera);
+        if (this.selectedFurniture) this.transformControls.attach(this.selectedFurniture);
+        return this.renderer.domElement.toDataURL('image/png');
+    }
+
+    showInspector(info) {
+        const overlay = document.getElementById('inspector-overlay');
+        const title = document.getElementById('insp-elem-title');
+        const body = document.getElementById('insp-elem-body');
+        if (!overlay || !title || !body) return;
+
+        overlay.style.display = 'block';
+        if (info.type === 'Wall') {
+            const w = info.data;
+            title.textContent = `WALL: ${w.id} (${w.type})`;
+            body.innerHTML = `
+                <div>Length: <strong>${w.length_m} m</strong> | Height: <strong>${w.height_m} m</strong></div>
+                <div>Volume: <strong>${w.volume_m3} m³</strong> | Cost: <strong>₹${w.cost_inr.toLocaleString()}</strong></div>
+                <div style="margin-top:4px; color:#38bdf8;"><strong>IS 456 Structural Solver:</strong></div>
+                <div>Bending Moment: <strong>${w.structural_solver.bending_moment_knm} kNm</strong></div>
+                <div>Deflection: <strong>${w.structural_solver.deflection_mm} mm</strong> (${w.structural_solver.status})</div>
+            `;
+        } else if (info.type === 'Room') {
+            const r = info.data;
+            title.textContent = `ROOM: ${r.name}`;
+            body.innerHTML = `
+                <div>Area: <strong>${r.area_sqm} m²</strong> (${r.area_sqft} sq ft)</div>
+                <div>NBC 2016 Compliant: <strong>${r.nbc_compliant ? '✅ Yes' : '⚠️ Non-compliant'}</strong></div>
+                <div>Daylight: <strong>${r.daylight.status}</strong> | Cross Vent: <strong>${r.ventilation.cross_vent ? 'Yes' : 'No'}</strong></div>
+                <div style="margin-top:4px; color:#4ade80;"><strong>IoT Live Telemetry:</strong></div>
+                <div>Temp: <strong>${r.iot_live.temp_c}°C</strong> | Humidity: <strong>${r.iot_live.humidity_pct}%</strong></div>
+                <div>CO₂: <strong>${r.iot_live.co2_ppm} ppm</strong> | Status: <strong>${r.iot_live.occupancy}</strong></div>
+            `;
+        }
+    }
+
+    exportOBJ() {
+        this.transformControls.detach();
+        let objContent = "# Patrick Architect OBJ Export\n";
+        let vOffset = 1;
+
+        this.houseGroup.traverse(child => {
+            if (child.isMesh && child.geometry) {
+                const geom = child.geometry.isBufferGeometry ? child.geometry : new THREE.BufferGeometry().fromGeometry(child.geometry);
+                const pos = geom.attributes.position;
+                if (!pos) return;
+
+                child.updateMatrixWorld();
+                const matrix = child.matrixWorld;
+
+                for (let i = 0; i < pos.count; i++) {
+                    const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(matrix);
+                    objContent += `v ${v.x.toFixed(4)} ${v.y.toFixed(4)} ${v.z.toFixed(4)}\n`;
+                }
+
+                for (let i = 0; i < pos.count; i += 3) {
+                    objContent += `f ${vOffset + i} ${vOffset + i + 1} ${vOffset + i + 2}\n`;
+                }
+                vOffset += pos.count;
+            }
+        });
+
+        const blob = new Blob([objContent], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "Patrick_Architect_Model.obj";
+        a.click();
+        if (this.selectedFurniture) this.transformControls.attach(this.selectedFurniture);
+    }
+
+    clearGroup(group) {
+        while (group.children.length > 0) {
+            const obj = group.children[0];
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                else obj.material.dispose();
+            }
+            group.remove(obj);
+        }
     }
 
     onWindowResize() {
-        if (!this.container) return;
-        this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+        if (!this.container || !this.renderer || !this.camera) return;
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.renderer.setSize(width, height);
     }
 
     animate() {
-        requestAnimationFrame(this.animate);
-        const time = performance.now();
+        requestAnimationFrame(() => this.animate());
 
-        if (this.isWalkMode && this.fpControls && this.fpControls.isLocked) {
+        if (this.isWalkthrough && this.pointerLockControls.isLocked) {
+            const time = performance.now();
             const delta = (time - this.prevTime) / 1000;
+
             this.velocity.x -= this.velocity.x * 10.0 * delta;
             this.velocity.z -= this.velocity.z * 10.0 * delta;
 
@@ -170,641 +675,20 @@ class HouseViewer {
             this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
             this.direction.normalize();
 
-            if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * 24.0 * delta;
-            if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * 24.0 * delta;
+            if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * 40.0 * delta;
+            if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * 40.0 * delta;
 
-            this.fpControls.moveRight(-this.velocity.x * delta);
-            this.fpControls.moveForward(-this.velocity.z * delta);
+            this.pointerLockControls.moveRight(-this.velocity.x * delta);
+            this.pointerLockControls.moveForward(-this.velocity.z * delta);
             this.camera.position.y = 1.65;
-        } else {
-            this.controls.update();
+
+            this.prevTime = time;
         }
-        this.prevTime = time;
+
+        if (this.orbitControls && !this.isWalkthrough) {
+            this.orbitControls.update();
+        }
+
         this.renderer.render(this.scene, this.camera);
-    }
-
-    clearScene() {
-        [this.houseGroup, this.doorsGroup, this.windowsGroup, this.furnitureGroup, this.ventilationGroup, this.defectsGroup, this.measureGroup, this.dimensionGroup, this.egressGroup, this.avatarGroup].forEach(grp => {
-            while (grp.children.length > 0) {
-                const obj = grp.children[0];
-                if (obj.geometry) obj.geometry.dispose();
-                grp.remove(obj);
-            }
-        });
-    }
-
-    renderReconstruction(data) {
-        this.clearScene();
-        if (!data || !data.walls) return;
-        this.activeData = data;
-
-        const wallHeight = 2.80;
-        const wallThickness = 0.23;
-
-        const capMaterial = new THREE.MeshStandardMaterial({
-            color: 0x2b2d42,
-            roughness: 0.6,
-            clippingPlanes: [this.sectionPlane]
-        });
-
-        // 1. Procedural Walls with 90-Degree Orthogonal Corners
-        data.walls.forEach(w => {
-            const dx = w.p2[0] - w.p1[0];
-            const dz = w.p2[1] - w.p1[1];
-            const length = Math.hypot(dx, dz);
-            if (length < 0.2) return;
-
-            const angle = Math.atan2(dz, dx);
-            const midX = (w.p1[0] + w.p2[0]) / 2;
-            const midZ = (w.p1[1] + w.p2[1]) / 2;
-
-            const wallGeom = new THREE.BoxGeometry(length, wallHeight, wallThickness);
-            const wallMesh = new THREE.Mesh(wallGeom, this.wallMaterial);
-            wallMesh.position.set(midX, wallHeight / 2, midZ);
-            wallMesh.rotation.y = -angle;
-            wallMesh.castShadow = true;
-            wallMesh.receiveShadow = true;
-            wallMesh.userData = { isWall: true, wallData: w };
-            this.houseGroup.add(wallMesh);
-
-            const capGeom = new THREE.BoxGeometry(length, 0.05, wallThickness + 0.03);
-            const capMesh = new THREE.Mesh(capGeom, capMaterial);
-            capMesh.position.set(midX, wallHeight + 0.025, midZ);
-            capMesh.rotation.y = -angle;
-            this.houseGroup.add(capMesh);
-
-            const cornerGeom = new THREE.BoxGeometry(wallThickness, wallHeight, wallThickness);
-            const cornerMesh = new THREE.Mesh(cornerGeom, this.wallMaterial);
-            cornerMesh.position.set(w.p1[0], wallHeight / 2, w.p1[1]);
-            cornerMesh.userData = { isWall: true, wallData: w };
-            this.houseGroup.add(cornerMesh);
-        });
-
-        // 2. Colonnade
-        if (data.colonnade_active) {
-            const colGeom = new THREE.CylinderGeometry(0.18, 0.18, wallHeight, 16);
-            const colMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-            [-1.2, 1.2].forEach(offset => {
-                const colMesh = new THREE.Mesh(colGeom, colMat);
-                colMesh.position.set(offset, wallHeight / 2, 0);
-                colMesh.castShadow = true;
-                this.houseGroup.add(colMesh);
-            });
-        }
-
-        // 3. Ground Base Slab
-        const slabGeom = new THREE.BoxGeometry(42, 0.3, 34);
-        const slabMat = new THREE.MeshStandardMaterial({ color: 0xefede8, roughness: 0.95 });
-        const slabMesh = new THREE.Mesh(slabGeom, slabMat);
-        slabMesh.position.set(0, -0.15, 0);
-        slabMesh.receiveShadow = true;
-        this.houseGroup.add(slabMesh);
-
-        // 4. Floor Planes (Clean, identifiable room carpets)
-        if (data.rooms) {
-            const floorColors = [0xeae2b7, 0xfdf0d5, 0xe8e8e4, 0xd8e2dc, 0xfcd5ce];
-            data.rooms.forEach((r, idx) => {
-                const b = r.bounds;
-                const rGeom = new THREE.PlaneGeometry(b.w, b.d);
-                const rMat = new THREE.MeshStandardMaterial({
-                    color: floorColors[idx % floorColors.length],
-                    roughness: 0.6,
-                    side: THREE.DoubleSide
-                });
-                const rMesh = new THREE.Mesh(rGeom, rMat);
-                rMesh.rotation.x = -Math.PI / 2;
-                rMesh.position.set(b.x + b.w / 2, 0.02, b.z + b.d / 2);
-                rMesh.receiveShadow = true;
-                rMesh.userData = { isFloor: true, room: r };
-                this.houseGroup.add(rMesh);
-            });
-        }
-
-        // 5. Build Background Helpers (Pre-calculated but kept invisible until toggled)
-        this.buildDimensions(data.rooms);
-        this.buildEgressSimulation(data.egress);
-        this.buildAvatar();
-        this.buildVentilationFlows();
-
-        // NOTE: Initial scene stays clean and un-staged.
-        // Furniture is only staged when the user clicks "⚡ AI Auto-Stage All" or selects from the catalog.
-    }
-
-    // ARCHITECTURAL AI AUTO-STAGING (Cohesive Room Sets)
-    autoStageAll() {
-        this.clearFurniture();
-        if (!this.activeData || !this.activeData.rooms) return;
-
-        this.activeData.rooms.forEach(r => {
-            const b = r.bounds;
-            const cx = b.x + b.w / 2;
-            const cz = b.z + b.d / 2;
-            const name = (r.name || '').toLowerCase();
-
-            if (name.includes('bedroom')) {
-                // Bed against back wall with headboard facing into room
-                this.instantiateFurniture('bed', cx, b.z + b.d - 1.45);
-                // Wardrobe flush against side wall
-                this.instantiateFurniture('wardrobe', b.x + 0.55, cz);
-            } else if (name.includes('living') || name.includes('hallway')) {
-                // Living room suite: 3-seater sofa + coffee table + TV console
-                this.instantiateFurniture('sofa', cx, cz - 0.4);
-            } else if (name.includes('dining')) {
-                // Centered dining table and 4 chairs
-                this.instantiateFurniture('dining', cx, cz);
-            } else if (name.includes('kitchen')) {
-                // Kitchen counter along one wall + refrigerator in corner
-                this.instantiateFurniture('kitchen', cx, b.z + 0.6);
-                this.instantiateFurniture('fridge', b.x + b.w - 0.7, b.z + 0.6);
-            } else if (name.includes('bath')) {
-                // Vanity unit + toilet suite
-                this.instantiateFurniture('bath', cx, cz);
-            }
-        });
-    }
-
-    // PROCEDURAL HIGH-QUALITY FURNITURE GENERATOR
-    instantiateFurniture(type, x, z) {
-        const group = new THREE.Group();
-
-        if (type === 'bed') {
-            // Soft carpet under bed
-            const rugMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.9 });
-            const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.6), rugMat);
-            rug.rotation.x = -Math.PI / 2;
-            rug.position.set(0, 0.03, 0.1);
-            group.add(rug);
-
-            // Bed frame
-            const frameMat = new THREE.MeshStandardMaterial({ color: 0x3f3f46, roughness: 0.5 });
-            const frame = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.28, 2.15), frameMat);
-            frame.position.set(0, 0.14, 0);
-            frame.castShadow = true;
-            group.add(frame);
-
-            // Mattress
-            const mattressMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-            const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.25, 2.05), mattressMat);
-            mattress.position.set(0, 0.35, 0);
-            group.add(mattress);
-
-            // Duvet/Blanket
-            const duvetMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.6 });
-            const duvet = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.08, 1.4), duvetMat);
-            duvet.position.set(0, 0.48, -0.3);
-            group.add(duvet);
-
-            // Headboard
-            const hb = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.0, 0.14), frameMat);
-            hb.position.set(0, 0.55, 1.05);
-            group.add(hb);
-
-            // Dual Pillows
-            const pMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.5 });
-            const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.12, 0.4), pMat);
-            p1.position.set(-0.5, 0.52, 0.68);
-            const p2 = p1.clone();
-            p2.position.set(0.5, 0.52, 0.68);
-            group.add(p1);
-            group.add(p2);
-
-            // Dual Nightstands with Lamps
-            const nsMat = new THREE.MeshStandardMaterial({ color: 0x713f12, roughness: 0.4 });
-            const lampMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfef08a, emissiveIntensity: 0.3 });
-            [-1.3, 1.3].forEach(ox => {
-                const ns = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.45, 0.46), nsMat);
-                ns.position.set(ox, 0.22, 0.8);
-                ns.castShadow = true;
-                group.add(ns);
-
-                const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.28, 12), lampMat);
-                lamp.position.set(ox, 0.58, 0.8);
-                group.add(lamp);
-            });
-        } else if (type === 'sofa') {
-            // Area Rug
-            const rugMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.95 });
-            const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.6), rugMat);
-            rug.rotation.x = -Math.PI / 2;
-            rug.position.set(0, 0.03, 0.5);
-            group.add(rug);
-
-            // 3-Seater Modern Sofa
-            const sofaMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
-            const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.45, 0.9), sofaMat);
-            seat.position.set(0, 0.25, 0);
-            seat.castShadow = true;
-            group.add(seat);
-
-            const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.2), sofaMat);
-            back.position.set(0, 0.62, -0.35);
-            group.add(back);
-
-            // Armrests
-            [-1.15, 1.15].forEach(ox => {
-                const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.35, 0.9), sofaMat);
-                arm.position.set(ox, 0.52, 0);
-                group.add(arm);
-            });
-
-            // Modern Coffee Table
-            const ctMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.3 });
-            const ct = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.36, 0.65), ctMat);
-            ct.position.set(0, 0.18, 0.9);
-            ct.castShadow = true;
-            group.add(ct);
-
-            // Media TV Console Stand + Flat Screen
-            const tvStand = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.4, 0.38), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
-            tvStand.position.set(0, 0.2, 1.9);
-            const tvScreen = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.85, 0.04), new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.2 }));
-            tvScreen.position.set(0, 0.85, 1.9);
-            group.add(tvStand);
-            group.add(tvScreen);
-        } else if (type === 'dining') {
-            // Polished Table
-            const tableMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.3 });
-            const table = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.76, 1.05), tableMat);
-            table.position.set(0, 0.38, 0);
-            table.castShadow = true;
-            group.add(table);
-
-            // Table Runner
-            const runner = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.02, 0.35), new THREE.MeshStandardMaterial({ color: 0xf5f5f4 }));
-            runner.position.set(0, 0.77, 0);
-            group.add(runner);
-
-            // 4 Matching Chairs
-            const chairMat = new THREE.MeshStandardMaterial({ color: 0x451a03 });
-            [-0.55, 0.55].forEach(ox => {
-                [-0.65, 0.65].forEach(oz => {
-                    const seatC = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.4), chairMat);
-                    seatC.position.set(ox, 0.21, oz);
-                    seatC.castShadow = true;
-                    const backC = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.45, 0.06), chairMat);
-                    backC.position.set(ox, 0.62, oz + (oz > 0 ? 0.17 : -0.17));
-                    group.add(seatC);
-                    group.add(backC);
-                });
-            });
-        } else if (type === 'wardrobe') {
-            // Full Height Wardrobe / Almirah
-            const wb = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.2, 0.65), new THREE.MeshStandardMaterial({ color: 0x52525b, roughness: 0.4 }));
-            wb.position.set(0, 1.1, 0);
-            wb.castShadow = true;
-            group.add(wb);
-
-            // Chrome Handles
-            const hMat = new THREE.MeshStandardMaterial({ color: 0xe4e4e7, metalness: 0.8 });
-            [-0.08, 0.08].forEach(hx => {
-                const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.4), hMat);
-                handle.position.set(hx, 1.1, 0.34);
-                group.add(handle);
-            });
-        } else if (type === 'fridge') {
-            // Stainless Steel Refrigerator
-            const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.85, 0.8), new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.7, roughness: 0.25 }));
-            fridge.position.set(0, 0.92, 0);
-            fridge.castShadow = true;
-            group.add(fridge);
-
-            const divider = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.02, 0.81), new THREE.MeshStandardMaterial({ color: 0x18181b }));
-            divider.position.set(0, 1.25, 0);
-            group.add(divider);
-        } else if (type === 'kitchen') {
-            // Kitchen Counter Slab with Sink & Stove
-            const slab = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.86, 0.72), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.2 }));
-            slab.position.set(0, 0.43, 0);
-            slab.castShadow = true;
-            group.add(slab);
-
-            // Stainless Steel Sink
-            const sink = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.02, 0.42), new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.2 }));
-            sink.position.set(-0.6, 0.87, 0);
-            group.add(sink);
-
-            // Black Glass Induction Hob
-            const stove = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.02, 0.45), new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.1 }));
-            stove.position.set(0.5, 0.87, 0);
-            group.add(stove);
-        } else if (type === 'bath') {
-            // Vanity Basin
-            const vanity = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.82, 0.55), new THREE.MeshStandardMaterial({ color: 0x475569 }));
-            vanity.position.set(0, 0.41, 0);
-            const basin = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.4), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 }));
-            basin.position.set(0, 0.88, 0);
-            group.add(vanity);
-            group.add(basin);
-
-            // Wall Mirror
-            const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.02), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.05 }));
-            mirror.position.set(0, 1.5, -0.26);
-            group.add(mirror);
-        }
-
-        group.position.set(x, 0, z);
-        this.furnitureGroup.add(group);
-    }
-
-    clearFurniture() {
-        while (this.furnitureGroup.children.length > 0) {
-            const obj = this.furnitureGroup.children[0];
-            this.furnitureGroup.remove(obj);
-        }
-    }
-
-    setPlacementItem(type) {
-        this.selectedPlacementType = type;
-        const banner = document.getElementById('placing-banner');
-        if (banner) {
-            banner.style.display = type ? 'block' : 'none';
-            if (type) banner.textContent = `Placing: ${type.toUpperCase()}. Click anywhere on a room floor to place!`;
-        }
-    }
-
-    onPointerDown(e) {
-        if (this.selectedPlacementType) {
-            const rect = this.renderer.domElement.getBoundingClientRect();
-            this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-            this.raycaster.setFromCamera(this.mouse, this.camera);
-            const intersects = this.raycaster.intersectObjects(this.houseGroup.children, true);
-
-            if (intersects.length > 0) {
-                const pt = intersects[0].point;
-                this.instantiateFurniture(this.selectedPlacementType, pt.x, pt.z);
-                this.setPlacementItem(null);
-                document.querySelectorAll('.furniture-card-item').forEach(c => c.classList.remove('selected'));
-            }
-            return;
-        }
-
-        if (this.cadModeActive) {
-            this.handleCADClick(e);
-            return;
-        }
-
-        // Element Inspector Raycasting
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObjects(this.houseGroup.children, true);
-
-        if (intersects.length > 0) {
-            const obj = intersects[0].object;
-            const overlay = document.getElementById('inspector-overlay');
-            const title = document.getElementById('insp-elem-title');
-            const body = document.getElementById('insp-elem-body');
-
-            if (obj.userData.isWall) {
-                const w = obj.userData.wallData;
-                overlay.style.display = 'block';
-                title.textContent = `WALL ELEMENT: ${w.id || 'W-01'}`;
-                body.innerHTML = `
-                    <strong>Length:</strong> ${w.length_m} m &nbsp;|&nbsp; <strong>Height:</strong> 2.80 m<br>
-                    <strong>Thickness:</strong> 230 mm (Load-Bearing Masonry)<br>
-                    <strong>Estimated Cost:</strong> ₹${w.cost_inr ? w.cost_inr.toLocaleString() : '14,200'}<br>
-                    <strong>IS 456 Status:</strong> <span style="color:#4ade80;">Compliant</span>
-                `;
-            } else if (obj.userData.isFloor) {
-                const r = obj.userData.room;
-                overlay.style.display = 'block';
-                title.textContent = `SPACE: ${r.name}`;
-                body.innerHTML = `
-                    <strong>Area:</strong> ${r.area_sqft} sq.ft (${r.area_sqm} m²)<br>
-                    <strong>NBC 2016 Compliant:</strong> ${r.nbc_compliant ? '✓ Yes' : '✕ Violation'}<br>
-                    <strong>Ventilation Score:</strong> ${r.ventilation ? r.ventilation.score : 85} / 100
-                `;
-            }
-        }
-    }
-
-    // FEATURE: Sunset (18:00) & Diurnal Sun Simulation
-    updateSunPosition(hour) {
-        const isSunset = (hour >= 17.5);
-        const rad = ((hour - 6) / 12) * Math.PI;
-
-        const x = Math.cos(rad) * 45;
-        const y = Math.max(1.8, Math.sin(rad) * 40 + 5);
-        const z = Math.sin(rad * 0.5) * 20;
-
-        this.dirLight.position.set(x, y, z);
-
-        if (isSunset) {
-            this.dirLight.color.setHex(0xf97316);
-            this.dirLight.intensity = 1.6;
-            this.hemiLight.color.setHex(0xfde68a);
-            this.hemiLight.groundColor.setHex(0x7c2d12);
-            this.scene.background = new THREE.Color(0xfde68a);
-        } else {
-            this.dirLight.color.setHex(0xfff7e6);
-            this.dirLight.intensity = Math.max(0.3, Math.sin(rad) * 1.2);
-            this.hemiLight.color.setHex(0xffffff);
-            this.hemiLight.groundColor.setHex(0xd4d8d1);
-            this.scene.background = new THREE.Color(0xf6f6f4);
-        }
-    }
-
-    setWallColor(hex) {
-        this.wallMaterial.color.set(hex);
-    }
-
-    setSectionHeight(val) {
-        this.sectionPlane.constant = parseFloat(val);
-    }
-
-    buildEgressSimulation(egress) {
-        while (this.egressGroup.children.length > 0) this.egressGroup.remove(this.egressGroup.children[0]);
-        const pts = [
-            new THREE.Vector3(-12.5, 0.2, -8.2),
-            new THREE.Vector3(-2.0, 0.2, -0.5),
-            new THREE.Vector3(4.5, 0.2, 1.2),
-            new THREE.Vector3(14.0, 0.2, 4.5)
-        ];
-        const geom = new THREE.BufferGeometry().setFromPoints(pts);
-        const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 4 }));
-        this.egressGroup.add(line);
-        pts.forEach(p => {
-            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-            dot.position.copy(p);
-            this.egressGroup.add(dot);
-        });
-        this.egressGroup.visible = false;
-    }
-
-    toggleFireSimulation() {
-        this.egressGroup.visible = !this.egressGroup.visible;
-        const banner = document.getElementById('emergency-banner');
-        if (banner) banner.style.display = this.egressGroup.visible ? 'block' : 'none';
-        return this.egressGroup.visible;
-    }
-
-    toggleCADMode() {
-        this.cadModeActive = !this.cadModeActive;
-        this.cadPoints = [];
-        while (this.measureGroup.children.length > 0) this.measureGroup.remove(this.measureGroup.children[0]);
-        return this.cadModeActive;
-    }
-
-    handleCADClick(e) {
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObjects(this.houseGroup.children, true);
-
-        if (intersects.length > 0) {
-            const pt = intersects[0].point;
-            this.cadPoints.push(pt);
-
-            const pin = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-            pin.position.copy(pt);
-            this.measureGroup.add(pin);
-
-            const banner = document.getElementById('cad-readout-banner');
-            if (this.cadPoints.length === 1) {
-                banner.style.display = 'block';
-                banner.textContent = `Point A marked at (${pt.x.toFixed(2)}, ${pt.z.toFixed(2)}). Click Point B...`;
-            } else if (this.cadPoints.length === 2) {
-                const distM = this.cadPoints[0].distanceTo(this.cadPoints[1]);
-                const lineGeom = new THREE.BufferGeometry().setFromPoints(this.cadPoints);
-                const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 3 }));
-                this.measureGroup.add(line);
-
-                banner.innerHTML = `<strong>CAD Distance:</strong> ${distM.toFixed(2)} m &nbsp;|&nbsp; <strong>${(distM * 3.28084).toFixed(2)} ft</strong>`;
-                this.cadPoints = [];
-            }
-        }
-    }
-
-    buildDimensions(rooms) {
-        while (this.dimensionGroup.children.length > 0) this.dimensionGroup.remove(this.dimensionGroup.children[0]);
-        if (!rooms) return;
-        rooms.forEach(r => {
-            const b = r.bounds;
-            const p1 = new THREE.Vector3(b.x, 0.05, b.z);
-            const p2 = new THREE.Vector3(b.x + b.w, 0.05, b.z);
-            const geom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-            const mat = new THREE.LineDashedMaterial({ color: 0x0284c7, dashSize: 0.3, gapSize: 0.1 });
-            const line = new THREE.Line(geom, mat);
-            line.computeLineDistances();
-            this.dimensionGroup.add(line);
-        });
-        this.dimensionGroup.visible = false;
-    }
-
-    toggleDimensions() {
-        this.dimensionGroup.visible = !this.dimensionGroup.visible;
-        return this.dimensionGroup.visible;
-    }
-
-    buildAvatar() {
-        while (this.avatarGroup.children.length > 0) this.avatarGroup.remove(this.avatarGroup.children[0]);
-        const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 });
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.3, 16), mat);
-        body.position.set(0, 0.65, 2);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), mat);
-        head.position.set(0, 1.45, 2);
-        this.avatarGroup.add(body);
-        this.avatarGroup.add(head);
-        this.avatarGroup.visible = false;
-    }
-
-    toggleAvatar() {
-        this.avatarGroup.visible = !this.avatarGroup.visible;
-        return this.avatarGroup.visible;
-    }
-
-    toggleOverlay() {
-        const previewImg = document.getElementById('blueprint-review-img');
-        if (!previewImg || !previewImg.src) return false;
-
-        if (this.overlayGroup.children.length === 0) {
-            const loader = new THREE.TextureLoader();
-            loader.load(previewImg.src, (texture) => {
-                const geom = new THREE.PlaneGeometry(40, 40 * (previewImg.naturalHeight / (previewImg.naturalWidth || 1)));
-                const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.45, depthWrite: false });
-                const mesh = new THREE.Mesh(geom, mat);
-                mesh.rotation.x = -Math.PI / 2;
-                mesh.position.set(0, 0.03, 0);
-                this.overlayGroup.add(mesh);
-                this.overlayGroup.visible = true;
-            });
-            return true;
-        } else {
-            this.overlayGroup.visible = !this.overlayGroup.visible;
-            return this.overlayGroup.visible;
-        }
-    }
-
-    buildVentilationFlows() {
-        while (this.ventilationGroup.children.length > 0) this.ventilationGroup.remove(this.ventilationGroup.children[0]);
-        const dir = new THREE.Vector3(1, 0, 0.3).normalize();
-        [-6, 0, 6].forEach(offsetZ => {
-            const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(-14, 1.2, offsetZ), 28, 0x0284c7, 1.2, 0.7);
-            this.ventilationGroup.add(arrow);
-        });
-        this.ventilationGroup.visible = false;
-    }
-
-    toggleVentilation() {
-        this.ventilationGroup.visible = !this.ventilationGroup.visible;
-        return this.ventilationGroup.visible;
-    }
-
-    toggleWalkthrough() {
-        if (!this.fpControls) return false;
-        if (this.isWalkMode) {
-            this.exitWalkthrough();
-            return false;
-        } else {
-            this.isWalkMode = true;
-            this.controls.enabled = false;
-            this.camera.position.set(0, 1.65, 5);
-            this.fpControls.lock();
-            document.getElementById('walk-crosshair').style.display = 'block';
-            document.getElementById('walk-instruction-banner').style.display = 'block';
-            return true;
-        }
-    }
-
-    exitWalkthrough() {
-        this.isWalkMode = false;
-        if (this.fpControls && this.fpControls.isLocked) this.fpControls.unlock();
-        this.controls.enabled = true;
-        this.resetCamera();
-        document.getElementById('walk-crosshair').style.display = 'none';
-        document.getElementById('walk-instruction-banner').style.display = 'none';
-        const btn = document.getElementById('tool-walk');
-        if (btn) btn.classList.remove('active');
-    }
-
-    exportOBJ() {
-        let output = "# Patrick Architect BIM Wavefront OBJ Export\n";
-        let offset = 1;
-        this.houseGroup.children.forEach(mesh => {
-            if (mesh.geometry && mesh.geometry.type === 'BoxGeometry') {
-                const g = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-                const pos = g.attributes.position;
-                for (let i = 0; i < pos.count; i++) output += `v ${pos.getX(i).toFixed(4)} ${pos.getY(i).toFixed(4)} ${pos.getZ(i).toFixed(4)}\n`;
-                const idx = g.index;
-                if (idx) {
-                    for (let i = 0; i < idx.count; i += 3) output += `f ${idx.getX(i) + offset} ${idx.getX(i+1) + offset} ${idx.getX(i+2) + offset}\n`;
-                    offset += pos.count;
-                }
-            }
-        });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([output], { type: 'text/plain' }));
-        a.download = "Patrick_Architect_BIM.obj";
-        a.click();
-    }
-
-    resetCamera() {
-        this.camera.position.set(24, 28, 26);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
     }
 }

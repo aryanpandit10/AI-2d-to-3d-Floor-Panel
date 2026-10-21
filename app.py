@@ -4,6 +4,7 @@ import json
 import io
 import uuid
 import socket
+import base64
 import qrcode
 import numpy as np
 from flask import Flask, request, jsonify, render_template, send_file
@@ -28,7 +29,6 @@ def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.settimeout(0.5)
-        # Connect to public DNS address without sending actual traffic
         s.connect(('8.8.8.8', 80))
         ip = s.getsockname()[0]
     except Exception:
@@ -76,7 +76,7 @@ def classify_semantic_room(area_sqm, aspect_ratio, relative_pos):
 
 def process_floorplan(image_path, ambiguity_choice="opt_a"):
     """
-    Complete OpenCV Computer Vision & Structural Synthesis Pipeline:
+    OpenCV Computer Vision & Structural Synthesis Pipeline:
     1. Standardization to 1000px width.
     2. Morphological staircase suppression & Otsu binarization.
     3. 8-way Connected Component Labeling (CCL) for text/arc noise removal.
@@ -97,11 +97,9 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
     gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 210, 255, cv2.THRESH_BINARY_INV)
 
-    # Staircase and thin-hatch suppression
     stair_filter_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
     opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, stair_filter_kernel)
 
-    # Connected Component Labeling (CCL) for annotation suppression
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
     clean_walls = np.zeros_like(opened)
 
@@ -159,8 +157,7 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
                 vol_m3 = round(seg_len * 2.8 * (thickness_mm / 1000.0), 2)
                 wall_cost = int(vol_m3 * 4500)
 
-                # Analytical Beam Load-Path Solver (IS 456)
-                w_uniform = 18.5  # kN/m dead + live distributed design load
+                w_uniform = 18.5
                 max_moment = round((w_uniform * (seg_len ** 2)) / 8.0, 2)
                 max_shear = round((w_uniform * seg_len) / 2.0, 2)
                 est_deflection = round((5 * w_uniform * 1000 * ((seg_len * 1000) ** 4)) / (384 * 25000 * 4.2e8), 2)
@@ -187,7 +184,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
                 })
                 wall_counter += 1
 
-    # Human-in-the-Loop (HITL) Uncertainty Branching
     wall_segments = []
     has_archway = (ambiguity_choice == "opt_b")
     has_colonnade = (ambiguity_choice == "opt_c")
@@ -200,7 +196,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
             continue
         wall_segments.append(seg)
 
-    # Room Cavity Segmentation
     inv_mask = cv2.bitwise_not(closed_walls)
     room_contours, _ = cv2.findContours(inv_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -255,7 +250,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
             })
             r_idx += 1
 
-    # IS 456 Structural Span Defect Markers
     defects = []
     for w_seg in wall_segments:
         if w_seg["length_m"] > 4.5:
@@ -269,7 +263,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
                 "message": f"Wall {w_seg['id']} span {w_seg['length_m']}m exceeds 4.5m limit."
             })
 
-    # NBC 2016 Fire Emergency Egress Path Waypoints
     egress_points = [
         {"step": 1, "desc": "Farthest Interior Corner", "pos": [-12.5, 0.2, -8.2]},
         {"step": 2, "desc": "Corridor Neck Junction", "pos": [-2.0, 0.2, -0.5]},
@@ -288,7 +281,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
     cost_mep = int(flooring_area * 2200)
     total_budget_inr = cost_masonry + cost_flooring + cost_plaster + cost_mep
 
-    # Embodied Carbon & 30-Year Lifecycle Costing
     embodied_carbon_t = round(((masonry_vol * 220) + (flooring_area * 28) + (plaster_area * 12)) / 1000.0, 2)
     operational_energy_annual_kwh = int(flooring_area * 82)
     lifecycle_cost_30yr = int(total_budget_inr * 1.62)
@@ -300,7 +292,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
         "rating": "A-Grade Eco-Efficiency" if embodied_carbon_t < 14.0 else "Standard Baseline"
     }
 
-    # Pareto Multi-Objective Design Candidates
     pareto_candidates = [
         {
             "id": "cand_a",
@@ -396,10 +387,6 @@ def process_floorplan(image_path, ambiguity_choice="opt_a"):
     }
 
 
-# ==========================================
-# FLASK ROUTING & REST APIS
-# ==========================================
-
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -424,7 +411,6 @@ def reconstruct():
                 return jsonify(res)
             return jsonify({"status": "error", "message": "Failed to parse image."}), 400
 
-        # Fallback to previously cached sample floor plan
         for name in ['current_blueprint.png', 'current_blueprint.jpg', 'current_blueprint.jpeg', 'sample_plan.png']:
             candidate = os.path.join(app.config['UPLOAD_FOLDER'], name)
             if os.path.exists(candidate):
@@ -437,15 +423,51 @@ def reconstruct():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/virtual_stage', methods=['POST'])
+def virtual_stage():
+    try:
+        data = request.get_json() or {}
+        image_b64 = data.get("image", "")
+        theme = data.get("theme", "modern")
+
+        if not image_b64:
+            return jsonify({"error": "No image data received"}), 400
+
+        if "base64," in image_b64:
+            image_b64 = image_b64.split("base64,")[1]
+
+        raw_bytes = base64.b64decode(image_b64)
+        nparr = np.frombuffer(raw_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        gaussian = cv2.GaussianBlur(frame, (0, 0), 2.0)
+        enhanced = cv2.addWeighted(frame, 1.35, gaussian, -0.35, 0)
+
+        if theme == "luxury":
+            enhanced = cv2.convertScaleAbs(enhanced, alpha=1.1, beta=-15)
+        elif theme == "boho":
+            enhanced[:, :, 0] = np.clip(enhanced[:, :, 0] * 0.95, 0, 255)
+            enhanced[:, :, 2] = np.clip(enhanced[:, :, 2] * 1.08, 0, 255)
+        elif theme == "industrial":
+            gray_toned = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
+            gray_3ch = cv2.cvtColor(gray_toned, cv2.COLOR_GRAY2BGR)
+            enhanced = cv2.addWeighted(enhanced, 0.65, gray_3ch, 0.35, 0)
+
+        _, buffer = cv2.imencode('.png', enhanced)
+        out_b64 = base64.b64encode(buffer).decode('utf-8')
+
+        return jsonify({
+            "status": "success",
+            "styled_image": f"data:image/png;base64,{out_b64}"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/export_ifc/<session_id>', methods=['GET'])
 def export_ifc(session_id):
-    """
-    Generates standard open BIM IFC4.3 physical data exchange file
-    compatible with Autodesk Revit, ArchiCAD, and BlenderBIM.
-    """
     model = SHARED_MODELS.get(session_id)
     if not model:
-        # Fallback to local blueprint if session missing
         save_path = os.path.join(app.config['UPLOAD_FOLDER'], 'current_blueprint.png')
         if os.path.exists(save_path):
             model = process_floorplan(save_path)
@@ -490,9 +512,6 @@ END-ISO-10303-21;
 
 @app.route('/api/agent_run', methods=['POST'])
 def agent_run():
-    """
-    Autonomous Architectural Agent multi-step planning and tool execution.
-    """
     payload = request.get_json() or {}
     prompt = payload.get("prompt", "").lower()
 
@@ -512,10 +531,6 @@ def agent_run():
 
     return jsonify({"status": "success", "steps": steps, "plan": proposed_plan})
 
-
-# ==========================================
-# MOBILE COMPANION & QR DISCOVERY
-# ==========================================
 
 @app.route('/api/share_session', methods=['POST'])
 def share_session():
@@ -560,10 +575,6 @@ def get_qrcode(session_id):
 def mobile_view(session_id):
     return render_template('mobile_view.html', session_id=session_id)
 
-
-# ==========================================
-# SERVER ENTRY POINT
-# ==========================================
 
 if __name__ == '__main__':
     local_ip = get_local_ip()

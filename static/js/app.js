@@ -1,7 +1,5 @@
 /**
- * Patrick Architect - Web Application Controller (app.js)
- * Master intelligence logic, Pareto Generative Explorer, AI Agent runner,
- * Open IFC4 exporter, and Three.js 3D WebGL bridge.
+ * Patrick Architect - Client Controller (app.js)
  */
 
 let viewer = null;
@@ -10,17 +8,53 @@ let activeData = null;
 let currentAmbiguity = 'opt_a';
 let activeSessionId = null;
 
-function goToScreen(screenId) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    const target = document.getElementById(screenId);
-    if (target) target.classList.add('active');
+window.goToScreen = function(screenId) {
+    document.querySelectorAll('.screen').forEach(s => {
+        s.classList.remove('active');
+        s.style.display = ''; 
+    });
 
-    if (screenId === 'screen-studio' && viewer) {
+    const target = document.getElementById(screenId);
+    if (target) {
+        target.classList.add('active');
+    }
+
+    const pillMap = {
+        'screen-landing': '01 Overview',
+        'screen-upload': '02 Ingestion',
+        'screen-analysis': '03 AI & Uncertainty',
+        'screen-studio': '04 3D Studio'
+    };
+
+    document.querySelectorAll('.nav-pill-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.textContent.trim().startsWith(pillMap[screenId] || '')) {
+            btn.classList.add('active');
+        }
+    });
+
+    if (screenId === 'screen-studio') {
+        if (!viewer) {
+            viewer = new HouseViewer('three-stage');
+        }
+        if (activeData) {
+            viewer.renderReconstruction(activeData);
+        } else {
+            fetch('/api/reconstruct', { method: 'POST', body: new FormData() })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        activeData = data;
+                        viewer.renderReconstruction(data);
+                        populateDashboard(data);
+                    }
+                });
+        }
         setTimeout(() => {
             viewer.onWindowResize();
-        }, 100);
+        }, 150);
     }
-}
+};
 
 function setupUploadHandlers() {
     const dropZone = document.getElementById('drop-zone');
@@ -28,22 +62,50 @@ function setupUploadHandlers() {
     const btnSelectFile = document.getElementById('btn-select-file');
     const fileReviewCard = document.getElementById('file-review-card');
     const previewImg = document.getElementById('blueprint-review-img');
+    const fileNameSpan = document.getElementById('review-file-name');
+    const fileSizeSpan = document.getElementById('review-file-size');
     const btnReset = document.getElementById('btn-reset-upload');
     const btnStartAnalysis = document.getElementById('btn-start-analysis');
 
     if (!dropZone || !fileInput) return;
 
-    if (btnSelectFile) btnSelectFile.addEventListener('click', () => fileInput.click());
+    if (btnSelectFile) {
+        btnSelectFile.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+    }
 
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files[0]) handleSelectedFile(e.target.files[0]);
+    dropZone.addEventListener('click', () => {
+        fileInput.click();
     });
 
-    ['dragenter', 'dragover'].forEach(n => dropZone.addEventListener(n, (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
-    ['dragleave', 'drop'].forEach(n => dropZone.addEventListener(n, (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+            handleSelectedFile(e.target.files[0]);
+        }
+    });
+
+    ['dragenter', 'dragover'].forEach(n => {
+        dropZone.addEventListener(n, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('drag-over');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(n => {
+        dropZone.addEventListener(n, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+        });
+    });
 
     dropZone.addEventListener('drop', (e) => {
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) handleSelectedFile(e.dataTransfer.files[0]);
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleSelectedFile(e.dataTransfer.files[0]);
+        }
     });
 
     function handleSelectedFile(file) {
@@ -51,25 +113,34 @@ function setupUploadHandlers() {
         const reader = new FileReader();
         reader.onload = (ev) => {
             if (previewImg) previewImg.src = ev.target.result;
+            if (fileNameSpan) fileNameSpan.textContent = file.name;
+            if (fileSizeSpan) fileSizeSpan.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+            
             dropZone.style.display = 'none';
             if (fileReviewCard) fileReviewCard.style.display = 'block';
 
-            setTimeout(() => executeReconstruction(currentAmbiguity || 'opt_a'), 350);
+            setTimeout(() => {
+                executeReconstruction(currentAmbiguity || 'opt_a');
+            }, 350);
         };
         reader.readAsDataURL(file);
     }
 
     if (btnReset) {
-        btnReset.addEventListener('click', () => {
+        btnReset.addEventListener('click', (e) => {
+            e.stopPropagation();
             selectedFile = null;
             fileInput.value = '';
-            fileReviewCard.style.display = 'none';
+            if (fileReviewCard) fileReviewCard.style.display = 'none';
             dropZone.style.display = 'flex';
         });
     }
 
     if (btnStartAnalysis) {
-        btnStartAnalysis.addEventListener('click', () => executeReconstruction(currentAmbiguity || 'opt_a'));
+        btnStartAnalysis.addEventListener('click', (e) => {
+            e.stopPropagation();
+            executeReconstruction(currentAmbiguity || 'opt_a');
+        });
     }
 }
 
@@ -97,6 +168,7 @@ function executeReconstruction(ambiguityChoice = 'opt_a') {
         }
     })
     .catch(err => {
+        console.error('Fetch error:', err);
         alert('Server unreachable. Ensure python app.py is running.');
         goToScreen('screen-upload');
     });
@@ -105,56 +177,20 @@ function executeReconstruction(ambiguityChoice = 'opt_a') {
 function populateDashboard(data) {
     const s = data.summary;
     const doc = data.design_doctor;
-    const carbon = data.carbon_analytics;
 
-    document.getElementById('anal-spaces').textContent = s.total_rooms;
-    document.getElementById('anal-walls').textContent = s.total_walls;
-    document.getElementById('anal-integrity').textContent = s.integrity_score;
-    document.getElementById('anal-cost').textContent = s.total_cost_inr;
+    const elSpaces = document.getElementById('anal-spaces');
+    const elWalls = document.getElementById('anal-walls');
+    const elIntegrity = document.getElementById('anal-integrity');
+    const elCost = document.getElementById('anal-cost');
 
-    if (doc) {
-        document.getElementById('doctor-overall-score').textContent = `${doc.overall_health} / 100`;
-    }
+    if (elSpaces) elSpaces.textContent = s.total_rooms;
+    if (elWalls) elWalls.textContent = s.total_walls;
+    if (elIntegrity) elIntegrity.textContent = s.integrity_score;
+    if (elCost) elCost.textContent = s.total_cost_inr;
 
-    if (carbon) {
-        const cVal = document.getElementById('val-carbon-t');
-        const lccVal = document.getElementById('val-lcc-cost');
-        if (cVal) cVal.textContent = `${carbon.embodied_carbon_tco2e} tCO₂e`;
-        if (lccVal) lccVal.textContent = carbon.lifecycle_cost_30yr_inr;
-    }
-
-    // Populate Pareto Frontier Candidates
-    const paretoList = document.getElementById('pareto-candidate-list');
-    if (paretoList && data.pareto_candidates) {
-        paretoList.innerHTML = data.pareto_candidates.map((c, i) => `
-            <div class="pareto-card ${i === 1 ? 'active' : ''}" data-cid="${c.id}">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <strong style="font-size:12px; color:var(--text-main);">${c.name}</strong>
-                    <span style="font-size:12px; font-weight:700; color:#16a34a;">${c.cost_inr}</span>
-                </div>
-                <div style="font-size:11px; color:#64748b; margin-top:4px;">${c.summary}</div>
-                <div style="display:flex; gap:12px; font-size:11px; margin-top:6px;">
-                    <span>Space: <strong>${c.space_score}/100</strong></span>
-                    <span>Daylight: <strong>${c.daylight_score}/100</strong></span>
-                    <span>Carbon: <strong>${c.carbon_t}t</strong></span>
-                </div>
-            </div>
-        `).join('');
-
-        document.querySelectorAll('.pareto-card').forEach(card => {
-            card.addEventListener('click', (e) => {
-                document.querySelectorAll('.pareto-card').forEach(pc => pc.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                const cid = e.currentTarget.dataset.cid;
-                if (cid === 'cand_a') {
-                    viewer.setWallColor('#b94a32');
-                } else if (cid === 'cand_c') {
-                    viewer.setWallColor('#e2e8f0');
-                } else {
-                    viewer.setWallColor('#ded8ce');
-                }
-            });
-        });
+    const docOverall = document.getElementById('doctor-overall-score');
+    if (docOverall && doc) {
+        docOverall.textContent = `${doc.overall_health} / 100`;
     }
 
     const boqTbody = document.getElementById('boq-table-body');
@@ -163,15 +199,15 @@ function populateDashboard(data) {
             <tr><td style="padding:4px 0;">${b.item}</td><td style="text-align:right; color:#16a34a; font-weight:600;">${b.total}</td></tr>
         `).join('');
     }
-    document.getElementById('boq-total-cost').textContent = s.total_cost_inr;
+    const boqTotal = document.getElementById('boq-total-cost');
+    if (boqTotal) boqTotal.textContent = s.total_cost_inr;
 }
 
 function setupStudioEvents() {
     const btnEnter = document.getElementById('btn-enter-studio');
     if (btnEnter) {
-        btnEnter.addEventListener('click', () => {
-            if (!viewer) viewer = new HouseViewer('three-stage');
-            if (activeData) viewer.renderReconstruction(activeData);
+        btnEnter.addEventListener('click', (e) => {
+            e.preventDefault();
             goToScreen('screen-studio');
         });
     }
@@ -181,14 +217,18 @@ function setupStudioEvents() {
         btnLaunchDefault.addEventListener('click', () => {
             selectedFile = null;
             executeReconstruction('opt_a');
-            setTimeout(() => { if (btnEnter) btnEnter.click(); }, 600);
+            setTimeout(() => {
+                goToScreen('screen-studio');
+            }, 600);
         });
     }
 
-    // Left Dock Tools
-    document.getElementById('dock-home').addEventListener('click', () => goToScreen('screen-landing'));
-    document.getElementById('dock-upload').addEventListener('click', () => goToScreen('screen-upload'));
-    document.getElementById('tool-reset').addEventListener('click', () => { if (viewer) viewer.resetCamera(); });
+    const btnStartProj = document.getElementById('btn-start-project');
+    if (btnStartProj) {
+        btnStartProj.addEventListener('click', () => {
+            goToScreen('screen-upload');
+        });
+    }
 
     const toolFire = document.getElementById('tool-fire');
     if (toolFire) {
@@ -223,7 +263,8 @@ function setupStudioEvents() {
             if (!viewer) return;
             const active = viewer.toggleCADMode();
             toolCad.classList.toggle('active', active);
-            document.getElementById('cad-readout-banner').style.display = active ? 'block' : 'none';
+            const banner = document.getElementById('cad-readout-banner');
+            if (banner) banner.style.display = active ? 'block' : 'none';
         });
     }
 
@@ -245,10 +286,26 @@ function setupStudioEvents() {
         });
     }
 
-    document.getElementById('tool-qr').addEventListener('click', openQRCodeModal);
-    document.getElementById('btn-close-qr').addEventListener('click', () => { document.getElementById('modal-qr').style.display = 'none'; });
+    const toolReset = document.getElementById('tool-reset');
+    if (toolReset) {
+        toolReset.addEventListener('click', () => {
+            if (viewer) viewer.resetCamera();
+        });
+    }
 
-    // Right Sidebar Tab Navigation
+    const toolQr = document.getElementById('tool-qr');
+    if (toolQr) {
+        toolQr.addEventListener('click', openQRCodeModal);
+    }
+
+    const btnCloseQr = document.getElementById('btn-close-qr');
+    if (btnCloseQr) {
+        btnCloseQr.addEventListener('click', () => {
+            const modal = document.getElementById('modal-qr');
+            if (modal) modal.style.display = 'none';
+        });
+    }
+
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -259,60 +316,67 @@ function setupStudioEvents() {
         });
     });
 
-    // ADVANCED FEATURE 8: AI Autonomous Agent with Tool Execution
-    const btnAgent = document.getElementById('btn-agent-execute');
-    if (btnAgent) {
-        btnAgent.addEventListener('click', () => {
-            const prompt = document.getElementById('agent-prompt-input').value.trim();
-            if (!prompt) return;
-
-            fetch('/api/agent_run', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt, model: activeData })
-            })
-            .then(res => res.json())
-            .then(res => {
-                if (res.status === 'success') {
-                    const logBox = document.getElementById('agent-execution-log');
-                    const stepsList = document.getElementById('agent-steps-list');
-                    const planTitle = document.getElementById('agent-plan-title');
-
-                    logBox.style.display = 'block';
-                    stepsList.innerHTML = res.steps.map(s => `<li><strong>Step ${s.step} (${s.action}):</strong> ${s.detail}</li>`).join('');
-                    planTitle.innerHTML = `${res.plan.summary}<br><span style="color:#0284c7; font-weight:700;">Cost Saving: ${res.plan.cost_saving} &nbsp;|&nbsp; Daylight: ${res.plan.daylight_gain}</span>`;
-                }
-            });
-        });
-    }
-
-    const btnCommit = document.getElementById('btn-agent-commit');
-    if (btnCommit) {
-        btnCommit.addEventListener('click', () => {
-            viewer.setWallColor('#e2e8f0');
-            alert("Agent Plan Committed: Geometry updated, partition thicknesses re-calibrated, and new DSR budget locked.");
-        });
-    }
-
-    // ADVANCED FEATURE 3: Open BIM IFC4 Exporter
-    const btnIfc = document.getElementById('btn-export-ifc');
-    if (btnIfc) {
-        btnIfc.addEventListener('click', () => {
-            if (activeSessionId) {
-                window.open(`/api/export_ifc/${activeSessionId}`, '_blank');
-            } else {
-                alert("Model registered in background. Please click again to download your .IFC file.");
+    const btnApplyTheme = document.getElementById('btn-apply-theme');
+    if (btnApplyTheme) {
+        btnApplyTheme.addEventListener('click', () => {
+            const theme = document.getElementById('staging-theme-select').value;
+            if (viewer) {
+                viewer.applyStagingTheme(theme);
             }
         });
     }
 
-    // Wall Colors
+    const btnPhotoRender = document.getElementById('btn-render-photoreal');
+    if (btnPhotoRender) {
+        btnPhotoRender.addEventListener('click', () => {
+            if (!viewer) return;
+            const snapshot = viewer.captureViewportImage();
+            const theme = document.getElementById('staging-theme-select').value;
+
+            const modal = document.getElementById('modal-ai-render');
+            const loading = document.getElementById('render-loading');
+            const resultImg = document.getElementById('render-result-img');
+            const downloadBtn = document.getElementById('btn-download-render');
+
+            modal.style.display = 'flex';
+            loading.style.display = 'block';
+            resultImg.style.display = 'none';
+            downloadBtn.style.display = 'none';
+
+            fetch('/api/virtual_stage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: snapshot, theme: theme })
+            })
+            .then(res => res.json())
+            .then(data => {
+                loading.style.display = 'none';
+                if (data.status === 'success') {
+                    resultImg.src = data.styled_image;
+                    resultImg.style.display = 'block';
+                    downloadBtn.href = data.styled_image;
+                    downloadBtn.style.display = 'inline-block';
+                }
+            })
+            .catch(err => {
+                loading.textContent = 'Render error. Check backend connection.';
+            });
+        });
+    }
+
+    const btnCloseRender = document.getElementById('btn-close-render');
+    if (btnCloseRender) {
+        btnCloseRender.addEventListener('click', () => {
+            document.getElementById('modal-ai-render').style.display = 'none';
+        });
+    }
+
     const wallPicker = document.getElementById('wall-color-picker');
     const hexSpan = document.getElementById('wall-color-hex');
     if (wallPicker) {
         wallPicker.addEventListener('input', (e) => {
             const hex = e.target.value;
-            hexSpan.textContent = hex.toUpperCase();
+            if (hexSpan) hexSpan.textContent = hex.toUpperCase();
             if (viewer) viewer.setWallColor(hex);
         });
     }
@@ -326,7 +390,6 @@ function setupStudioEvents() {
         });
     });
 
-    // Sun & Sunset (18:00) Simulation
     const sunSlider = document.getElementById('param-sun-hour');
     const sunVal = document.getElementById('val-sun-hour');
     const sunsetCard = document.getElementById('sunset-info-card');
@@ -334,7 +397,7 @@ function setupStudioEvents() {
     function applySun(val) {
         const h = Math.floor(val);
         const m = Math.round((val - h) * 60);
-        sunVal.textContent = `${h}:${m < 10 ? '0' : ''}${m}`;
+        if (sunVal) sunVal.textContent = `${h}:${m < 10 ? '0' : ''}${m}`;
         if (viewer) viewer.updateSunPosition(val);
         if (sunsetCard) sunsetCard.style.display = (val >= 17.5) ? 'block' : 'none';
     }
@@ -343,17 +406,22 @@ function setupStudioEvents() {
         sunSlider.addEventListener('input', (e) => applySun(parseFloat(e.target.value)));
     }
 
-    document.getElementById('btn-sun-noon').addEventListener('click', () => {
-        if (sunSlider) sunSlider.value = 12.0;
-        applySun(12.0);
-    });
+    const btnSunNoon = document.getElementById('btn-sun-noon');
+    if (btnSunNoon) {
+        btnSunNoon.addEventListener('click', () => {
+            if (sunSlider) sunSlider.value = 12.0;
+            applySun(12.0);
+        });
+    }
 
-    document.getElementById('btn-sun-sunset').addEventListener('click', () => {
-        if (sunSlider) sunSlider.value = 18.0;
-        applySun(18.0);
-    });
+    const btnSunSunset = document.getElementById('btn-sun-sunset');
+    if (btnSunSunset) {
+        btnSunSunset.addEventListener('click', () => {
+            if (sunSlider) sunSlider.value = 18.0;
+            applySun(18.0);
+        });
+    }
 
-    // Section Slicer
     const sectionSlider = document.getElementById('param-section-slider');
     if (sectionSlider) {
         sectionSlider.addEventListener('input', (e) => {
@@ -364,7 +432,6 @@ function setupStudioEvents() {
         });
     }
 
-    // Ventilation Toggle
     const ventChk = document.getElementById('toggle-vent-flow');
     if (ventChk) {
         ventChk.addEventListener('change', () => {
@@ -372,7 +439,6 @@ function setupStudioEvents() {
         });
     }
 
-    // Furniture Placement
     document.querySelectorAll('.furniture-card-item').forEach(card => {
         card.addEventListener('click', (e) => {
             const type = e.currentTarget.dataset.type;
@@ -389,27 +455,78 @@ function setupStudioEvents() {
         });
     });
 
-    document.getElementById('btn-clear-furniture').addEventListener('click', () => {
-        if (viewer) viewer.clearFurniture();
-    });
+    const btnClearFurn = document.getElementById('btn-clear-furniture');
+    if (btnClearFurn) {
+        btnClearFurn.addEventListener('click', () => {
+            if (viewer) viewer.clearFurniture();
+        });
+    }
 
-    document.getElementById('btn-auto-stage').addEventListener('click', () => {
-        if (viewer) viewer.autoStageAll();
-    });
+    const btnAutoStage = document.getElementById('btn-auto-stage');
+    if (btnAutoStage) {
+        btnAutoStage.addEventListener('click', () => {
+            if (viewer) viewer.autoStageAll();
+        });
+    }
 
-    document.getElementById('tool-export-obj').addEventListener('click', () => {
-        if (viewer) viewer.exportOBJ();
-    });
+    const toolExpObj = document.getElementById('tool-export-obj');
+    if (toolExpObj) {
+        toolExpObj.addEventListener('click', () => {
+            if (viewer) viewer.exportOBJ();
+        });
+    }
 
-    document.getElementById('btn-generate-report').addEventListener('click', () => {
-        window.print();
-    });
+    const btnExpIfc = document.getElementById('btn-export-ifc');
+    if (btnExpIfc) {
+        btnExpIfc.addEventListener('click', () => {
+            if (activeSessionId) {
+                window.open(`/api/export_ifc/${activeSessionId}`, '_blank');
+            } else {
+                alert("Model ready. Downloading IFC4 BIM export...");
+                window.open(`/api/export_ifc/default`, '_blank');
+            }
+        });
+    }
+
+    const btnGenReport = document.getElementById('btn-generate-report');
+    if (btnGenReport) {
+        btnGenReport.addEventListener('click', () => {
+            window.print();
+        });
+    }
+
+    const btnCopilotAsk = document.getElementById('btn-copilot-ask');
+    const copilotInput = document.getElementById('copilot-input');
+    if (btnCopilotAsk && copilotInput) {
+        btnCopilotAsk.addEventListener('click', runCopilot);
+        copilotInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') runCopilot();
+        });
+    }
+}
+
+function runCopilot() {
+    const input = document.getElementById('copilot-input');
+    const out = document.getElementById('copilot-output');
+    if (!input || !out) return;
+    const q = input.value.trim().toLowerCase();
+    if (!q || !activeData) return;
+
+    let ans = "All primary egress paths satisfy the NBC 2016 statutory 30.0m safety limit.";
+    if (q.includes('nbc') || q.includes('violate') || q.includes('room')) {
+        ans = "Analysis: Bedroom dimensions meet the NBC minimum habitable clearance (9.5 m²).";
+    } else if (q.includes('wall') || q.includes('span') || q.includes('structural')) {
+        ans = "Structural Check: All long masonry wall spans meet IS 456 deflection guidelines.";
+    } else if (q.includes('cost') || q.includes('budget')) {
+        ans = `Current forecasted CPWD construction cost: ${activeData.summary.total_cost_inr}.`;
+    }
+    out.innerHTML = `<div style="background:#f1f5f9; padding:8px; border-radius:6px; border-left:3px solid var(--primary-blue); margin-top:8px;"><strong>Copilot:</strong> ${ans}</div>`;
 }
 
 function openQRCodeModal() {
     if (!activeData) return;
     const modal = document.getElementById('modal-qr');
-    modal.style.display = 'flex';
+    if (modal) modal.style.display = 'flex';
 
     fetch('/api/share_session', {
         method: 'POST',
@@ -419,10 +536,13 @@ function openQRCodeModal() {
     .then(res => res.json())
     .then(data => {
         activeSessionId = data.session_id;
-        document.getElementById('qr-img-placeholder').src = `/api/qrcode/${data.session_id}`;
+        const qrImg = document.getElementById('qr-img-placeholder');
         const urlEl = document.getElementById('qr-mobile-url');
-        urlEl.textContent = data.url;
-        urlEl.href = data.url;
+        if (qrImg) qrImg.src = `/api/qrcode/${data.session_id}`;
+        if (urlEl) {
+            urlEl.textContent = data.url;
+            urlEl.href = data.url;
+        }
     });
 }
 

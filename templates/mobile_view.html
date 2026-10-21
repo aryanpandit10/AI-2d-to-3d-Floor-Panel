@@ -156,7 +156,6 @@
                 });
             }
 
-            // Ground base slab
             const slab = new THREE.Mesh(new THREE.BoxGeometry(40, 0.3, 32), new THREE.MeshStandardMaterial({ color: 0xefede8 }));
             slab.position.set(0, -0.15, 0);
             houseGroup.add(slab);
@@ -185,7 +184,6 @@
 
         initScene();
 
-        // Fetch model payload for this active session
         fetch(`/api/session_data/${sessionId}`)
             .then(res => res.json())
             .then(data => {
